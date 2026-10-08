@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; connect-src https://openrouter.ai; form-action 'none'">
+<title>Plainspoken</title>
+<style>
+:root{--bg:#faf8f4;--panel:#fff;--ink:#1f1d1a;--mute:#6d675e;--line:#e4dfd6;--accent:#b4491f;--accent-ink:#fff;--good:#2f7d4f;--warn:#a86a00;--del:#fbe3dc;--ins:#dff1e5;--fix:#fbe3dc;--flag:#fdf0c9;--mono:ui-monospace,SFMono-Regular,Consolas,monospace}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#161513;--panel:#1f1d1a;--ink:#ece8e1;--mute:#a09a8f;--line:#33302b;--accent:#e0733f;--accent-ink:#161513;--good:#6cc08a;--warn:#e3a43c;--del:#4a2a22;--ins:#244433;--fix:#4a2a22;--flag:#4a3d16}}
+:root[data-theme="dark"]{--bg:#161513;--panel:#1f1d1a;--ink:#ece8e1;--mute:#a09a8f;--line:#33302b;--accent:#e0733f;--accent-ink:#161513;--good:#6cc08a;--warn:#e3a43c;--del:#4a2a22;--ins:#244433;--fix:#4a2a22;--flag:#4a3d16}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+.wrap{max-width:1180px;margin:0 auto;padding:20px 16px 48px}
+header{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:baseline;justify-content:space-between;margin-bottom:16px}
+h1{margin:0;font-size:1.5rem;letter-spacing:-.01em}
+.sub{color:var(--mute);font-size:.9rem}
+.badge{display:inline-block;border:1px solid var(--line);border-radius:99px;padding:1px 10px;font-size:.78rem;color:var(--good);background:var(--panel)}
+.bar{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-bottom:10px}
+.grp{display:inline-flex;gap:8px;align-items:center}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;flex-wrap:wrap}
+.seg button{border:0;background:transparent;color:var(--ink);padding:6px 11px;font:inherit;font-size:.9rem;cursor:pointer}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+label.chk{display:inline-flex;gap:6px;align-items:center;font-size:.9rem;cursor:pointer}
+input[type=text]{border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:8px;padding:6px 10px;font:inherit;font-size:.9rem;width:190px;max-width:100%}
+.spacer{flex:1}
+.btn{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:8px;padding:6px 12px;font:inherit;font-size:.9rem;cursor:pointer}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn:focus-visible,.seg button:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+details.voice{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 14px;margin-bottom:14px}
+details.voice summary{cursor:pointer;font-size:.9rem}
+details.voice textarea{width:100%;min-height:90px;margin-top:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);padding:8px 10px;font:inherit;font-size:.9rem}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media (max-width:760px){.cols{grid-template-columns:1fr}}
+.pane{background:var(--panel);border:1px solid var(--line);border-radius:10px;display:flex;flex-direction:column;min-height:340px;min-width:0}
+.pane.drop{outline:2px dashed var(--accent)}
+.ph{display:flex;justify-content:space-between;align-items:center;padding:8px 14px 0}
+.ph h2{margin:0;font-size:.8rem;text-transform:uppercase;letter-spacing:.06em;color:var(--mute);font-weight:600}
+.tabs button{border:0;background:transparent;color:var(--mute);font:inherit;font-size:.8rem;padding:2px 8px;border-radius:6px;cursor:pointer}
+.tabs button[aria-pressed="true"]{background:var(--line);color:var(--ink)}
+textarea.main,.view{flex:1;width:100%;min-height:300px;border:0;background:transparent;color:var(--ink);padding:10px 14px;font:inherit}
+textarea.main{resize:vertical}
+.view{white-space:pre-wrap;overflow:auto;max-height:600px;overflow-wrap:anywhere}
+.view del{background:var(--del);text-decoration:line-through;text-decoration-thickness:1px}
+.view ins{background:var(--ins);text-decoration:none}
+.view mark{background:var(--fix);color:inherit;border-radius:3px;cursor:help}
+.view mark.flag{background:var(--flag)}
+textarea::placeholder{color:var(--mute)}
+.foot{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;color:var(--mute);font-size:.8rem;padding:8px 14px;border-top:1px solid var(--line)}
+.meter{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin:14px 0}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 14px}
+.stat b{display:block;font-size:1.4rem;font-variant-numeric:tabular-nums}
+.stat span{color:var(--mute);font-size:.8rem}
+.good{color:var(--good)}.warnc{color:var(--warn)}
+.rep{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;min-width:0}
+.card h3{margin:0 0 8px;font-size:.95rem}
+.card ul{margin:0;padding:0;list-style:none}
+.card li{display:flex;justify-content:space-between;gap:10px;padding:4px 0;border-top:1px solid var(--line);font-size:.9rem}
+.card li:first-child{border-top:0}
+.card li em{font-style:normal;color:var(--mute);font-variant-numeric:tabular-nums;white-space:nowrap}
+.flag{display:block!important}
+.flag q{display:block;font-family:var(--mono);font-size:.8rem;color:var(--ink);quotes:none;margin-top:2px;overflow-wrap:anywhere}
+.flag small{color:var(--warn);font-weight:600}
+.empty{color:var(--mute);font-size:.9rem}
+.bar2{height:4px;background:var(--line);border-radius:2px;margin-top:3px;overflow:hidden}
+.bar2 i{display:block;height:100%;background:var(--accent)}
+.note{color:var(--mute);font-size:.8rem;margin-top:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>Plainspoken</h1>
+  <div class="sub"><span class="badge" id="badge" title="A Content-Security-Policy blocks every network request except https://openrouter.ai, and that only when you press the AI button">offline by default</span> Rules run in this page. Nothing leaves it unless you press the AI button.</div>
+</header>
+
+<div class="bar" role="group" aria-label="Options">
+  <div class="grp"><span class="sub">Strength</span>
+    <div class="seg" id="level">
+      <button type="button" data-v="1" aria-pressed="false" title="Formatting, chatbot debris, filler">Light</button>
+      <button type="button" data-v="2" aria-pressed="true" title="Plus vocabulary, structure, puffery">Standard</button>
+      <button type="button" data-v="3" aria-pressed="false" title="Plus tails, list labels, sentence splits">Aggressive</button>
+      <button type="button" data-v="4" aria-pressed="false" title="Plus rhythm engineering and up to three passes">Max</button>
+    </div></div>
+  <div class="grp"><span class="sub">Voice</span>
+    <div class="seg" id="voice">
+      <button type="button" data-v="neutral" aria-pressed="true" title="Plain, mixed register">Neutral</button>
+      <button type="button" data-v="casual" aria-pressed="false" title="Everyday words, But/So openers">Casual</button>
+      <button type="button" data-v="direct" aria-pressed="false" title="Cuts intensifiers and softeners">Direct</button>
+      <button type="button" data-v="formal" aria-pressed="false" title="Expands contractions, academic habits">Formal</button>
+      <button type="button" data-v="technical" aria-pressed="false" title="Like formal, and leaves ambiguous technical words alone">Technical</button>
+    </div></div>
+  <label class="chk"><input type="checkbox" id="contr" checked> Contractions</label>
+  <label class="chk"><input type="checkbox" id="live" checked> Live</label>
+  <label class="chk" title="Text inside double quotes stays exactly as written"><input type="checkbox" id="quotes" checked> Keep quotes</label>
+  <label class="chk" title="Comma separated. These stay exactly as written.">Keep <input type="text" id="keep" placeholder="brand names, jargon"></label>
+  <span class="spacer"></span>
+  <button class="btn" id="sample" type="button">Sample</button>
+  <label class="btn" for="file" style="cursor:pointer">Open file</label>
+  <input type="file" id="file" accept=".txt,.md,.markdown,.text" hidden>
+  <button class="btn primary" id="go" type="button" title="Ctrl+Enter">Humanize</button>
+</div>
+
+<details class="voice" id="voiceBox">
+  <summary>Match my voice (optional): paste a sample of your own writing, 60 words or more</summary>
+  <textarea id="voiceSample" placeholder="The tool reads your sentence length, rhythm, contractions, dashes and connectors, then adapts to them." spellcheck="false"></textarea>
+  <div class="sub" id="voiceInfo"></div>
+</details>
+
+<details class="voice" id="aiBox">
+  <summary>AI polish through OpenRouter (optional, off by default)</summary>
+  <p class="sub" style="margin:8px 0 0">Nothing to install. The page calls OpenRouter directly from your browser with your key. Text is sent to OpenRouter and the model you pick only when you press the button. Code, links, citations, quotes and Keep words are replaced by tokens first and checked on return.</p>
+  <div class="bar" style="margin:8px 0 0;border:0;padding:0">
+    <label class="chk">Key <input type="password" id="orKey" placeholder="sk-or-..." autocomplete="off" style="width:240px"></label>
+    <label class="chk">Model <input type="text" id="orModel" value="openrouter/auto" list="orModels" style="width:240px"></label>
+    <datalist id="orModels"><option value="openrouter/auto"></datalist>
+    <label class="chk" title="Stored unencrypted in this browser's local storage"><input type="checkbox" id="orRemember"> Remember key on this device</label>
+    <button class="btn primary" id="ai" type="button">Humanize with AI</button>
+    <button class="btn" id="aiStop" type="button" hidden>Cancel</button>
+  </div>
+  <div class="sub" id="aiStatus" role="status"></div>
+</details>
+
+<div class="cols">
+  <section class="pane" id="inPane">
+    <div class="ph"><h2>Original</h2><span class="sub">drop a .txt or .md file here</span></div>
+    <textarea class="main" id="in" placeholder="Paste text here. Markdown is fine; code, links, citations, quotes, paths and version numbers are left alone." spellcheck="false"></textarea>
+    <div class="foot" id="inStats"></div>
+  </section>
+  <section class="pane">
+    <div class="ph"><h2>Humanized</h2>
+      <div class="tabs" id="tabs"><button type="button" data-t="text" aria-pressed="true">Text</button><button type="button" data-t="diff" aria-pressed="false">Changes</button><button type="button" data-t="tells" aria-pressed="false" title="The original, with every tell marked">Tells</button></div></div>
+    <textarea class="main" id="out" readonly placeholder="Result appears here."></textarea>
+    <div class="view" id="diff" hidden></div>
+    <div class="view" id="tells" hidden></div>
+    <div class="foot">
+      <button class="btn" id="copy" type="button">Copy</button>
+      <button class="btn" id="save" type="button">Download .txt</button>
+      <button class="btn" id="again" type="button" title="Move the result back to the input and run another pass">Run again on result</button>
+      <span id="outStats"></span>
+    </div>
+  </section>
+</div>
+
+<div class="meter" aria-live="polite">
+  <div class="stat"><b id="sBefore">–</b><span id="vBefore">AI-tell score, original</span></div>
+  <div class="stat"><b id="sAfter" class="good">–</b><span id="vAfter">AI-tell score, result</span></div>
+  <div class="stat"><b id="sEdits">–</b><span>edits made</span></div>
+  <div class="stat"><b id="sFacts">–</b><span>numbers, URLs and acronyms kept</span></div>
+</div>
+
+<div class="rep">
+  <div class="card"><h3>What changed</h3><ul id="changes"><li class="empty">Nothing yet.</li></ul></div>
+  <div class="card"><h3>Needs a human</h3><ul id="flags"><li class="empty">Nothing flagged.</li></ul></div>
+  <div class="card"><h3>Score breakdown (original → result)</h3><ul id="break"><li class="empty">Nothing yet.</li></ul></div>
+  <div class="card"><h3>Writing stats (original → result)</h3><ul id="wstats"><li class="empty">Nothing yet.</li></ul></div>
+  <div class="card" id="driftCard" hidden><h3>Voice match</h3><ul id="drift"></ul></div>
+</div>
+
+<p class="note">Rule-based, so a program cannot invent specifics: vague attributions, formulaic outlooks and stacked triplets are flagged for you to rewrite with real names, numbers and opinions. The score blends tell density (40%), even rhythm (28%), vocabulary variety (18%) and repeated phrases (14%); it measures writing habits, not authorship. No tool can guarantee a pass on AI detectors.</p>
+</div>
+
+<script>
+/*ENGINE*/
+</script>
+
+<script>
+(function () {
+const $ = id => document.getElementById(id);
+const P = window.Plainspoken;
+let level = 2, voice = 'neutral', tab = 'text', timer, aiOverride = null, aiAbort = null;
+
+try {
+  const s = JSON.parse(localStorage.getItem('plainspoken') || '{}');
+  if (s.level) level = s.level;
+  if (s.voice) voice = s.voice;
+  if (s.contr === false) $('contr').checked = false;
+  if (s.live === false) $('live').checked = false;
+  if (s.quotes === false) $('quotes').checked = false;
+  if (s.keep) $('keep').value = s.keep;
+  if (s.draft) $('in').value = s.draft;
+  if (s.vsample) { $('voiceSample').value = s.vsample; $('voiceBox').open = true; }
+  if (s.orModel) $('orModel').value = s.orModel;
+  if (s.orKey) { $('orKey').value = s.orKey; $('orRemember').checked = true; $('aiBox').open = true; }
+} catch (e) {}
+function persist() {
+  try { localStorage.setItem('plainspoken', JSON.stringify({ level, voice, contr: $('contr').checked, live: $('live').checked, quotes: $('quotes').checked, keep: $('keep').value, draft: $('in').value.slice(0, 200000), vsample: $('voiceSample').value.slice(0, 50000), orModel: $('orModel').value, orKey: $('orRemember').checked ? $('orKey').value : '' })); } catch (e) {}
+}
+function paint() {
+  document.querySelectorAll('#level button').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.v === level)));
+  document.querySelectorAll('#voice button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === voice)));
+  document.querySelectorAll('#tabs button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.t === tab)));
+  $('out').hidden = tab !== 'text';
+  $('diff').hidden = tab !== 'diff';
+  $('tells').hidden = tab !== 'tells';
+  $('contr').disabled = voice === 'formal' || voice === 'technical';
+}
+paint();
+
+const safe = s => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const fmt = s => s.words + ' words · ' + s.sentences + ' sentences · avg ' + s.avg.toFixed(1);
+function li(parent, html, cls) { const e = document.createElement('li'); if (cls) e.className = cls; e.innerHTML = html; parent.appendChild(e); }
+const options = () => ({
+  contractions: $('contr').checked, voice, quotes: $('quotes').checked, sample: $('voiceSample').value,
+  keep: $('keep').value.split(',').map(s => s.trim()).filter(Boolean)
+});
+
+function renderDiff(a, b) {
+  const ops = P.diff(a, b), d = $('diff');
+  if (!ops) { d.textContent = 'Text too large for the Changes view.'; return; }
+  d.innerHTML = ops.map(o => o.t === '=' ? safe(o.v) : o.t === '-' ? '<del>' + safe(o.v) + '</del>' : '<ins>' + safe(o.v) + '</ins>').join('');
+}
+function renderTells(src, o) {
+  $('tells').innerHTML = P.highlights(src, level, o).map(s => s.label ? '<mark class="' + (s.flag ? 'flag' : '') + '" title="' + safe(s.label) + '">' + safe(s.text) + '</mark>' : safe(s.text)).join('');
+}
+
+function render() {
+  const src = $('in').value;
+  persist();
+  $('inStats').textContent = fmt(P.stats(src));
+  const prof = P.calibrate($('voiceSample').value);
+  $('voiceInfo').textContent = $('voiceSample').value.trim() ? (prof ? 'Sample read: avg sentence ' + prof.meanLen.toFixed(1) + ' words, ' + (prof.contractionRate * 100).toFixed(1) + ' contractions per 100 words' + (prof.dashRate >= 0.004 ? ', uses em dashes' : '') + '.' : 'Needs 60 words or more to read.') : '';
+  if (!src.trim()) {
+    $('out').value = ''; $('diff').textContent = ''; $('tells').textContent = ''; $('outStats').textContent = '';
+    ['sBefore', 'sAfter', 'sEdits', 'sFacts'].forEach(i => $(i).textContent = '–');
+    ['changes', 'flags', 'break', 'wstats'].forEach(i => $(i).innerHTML = '<li class="empty">Nothing yet.</li>');
+    $('driftCard').hidden = true;
+    return;
+  }
+  const o = options();
+  const r = P.run(src, level, o);
+  const aiKey = src + '' + level + voice + o.keep.join() + o.quotes + o.contractions + o.sample;
+  if (aiOverride && aiOverride.key === aiKey) { r.text = aiOverride.text; r.changes.unshift({ label: 'AI polish (' + aiOverride.model + ')', n: aiOverride.chunks }); }
+  else aiOverride = null;
+  $('out').value = r.text;
+  if (tab === 'diff') renderDiff(src, r.text);
+  if (tab === 'tells') renderTells(src, o);
+  $('outStats').textContent = fmt(P.stats(r.text));
+  const m0 = P.metrics(src), m1 = P.metrics(r.text);
+  $('sBefore').textContent = m0.total;
+  $('sAfter').textContent = m1.total;
+  $('vBefore').textContent = 'original: ' + m0.verdict + (m0.short ? ' (short text, low confidence)' : '');
+  $('vAfter').textContent = 'result: ' + m1.verdict;
+  $('sEdits').textContent = r.changes.reduce((s, c) => s + c.n, 0);
+
+  const ch = $('changes'); ch.innerHTML = '';
+  if (!r.changes.length) li(ch, 'No changes. Text already reads plain.', 'empty');
+  r.changes.forEach(c => li(ch, '<span>' + safe(c.label) + '</span><em>' + c.n + '</em>'));
+
+  const fl = $('flags'); fl.innerHTML = '';
+  const fc = P.checkFacts(src, r.text), kept = fc.total - fc.lost.length;
+  $('sFacts').textContent = fc.total ? kept + '/' + fc.total : '–';
+  $('sFacts').className = fc.lost.length ? 'warnc' : 'good';
+  if (fc.lost.length) li(fl, '<small>Fact check: in the original, missing from the result</small><q>' + safe(fc.lost.slice(0, 20).join('  ')) + '</q>', 'flag');
+  const g = P.readabilityGuard(src, r.text);
+  if (g.bad) li(fl, '<small>Readability dropped (' + g.easeBefore.toFixed(0) + ' to ' + g.easeAfter.toFixed(0) + ', sentence ratio ' + g.ratio.toFixed(2) + '): review the result</small>', 'flag');
+  const flags = P.findFlags(r.text);
+  if (aiOverride) aiOverride.warnings.forEach(w => li(fl, '<small>AI polish: ' + safe(w) + '</small>', 'flag'));
+  if (!flags.length && !fc.lost.length && !g.bad && !(aiOverride && aiOverride.warnings.length)) li(fl, 'Nothing flagged.', 'empty');
+  flags.forEach(f => li(fl, '<small>' + safe(f.label) + '</small><q>' + safe(f.text) + '</q>', 'flag'));
+
+  const bk = $('break'); bk.innerHTML = '';
+  [['Tell density (40%)', 'lexical'], ['Even rhythm (28%)', 'rhythm'], ['Low vocabulary variety (18%)', 'diversity'], ['Repeated phrases (14%)', 'repeats']].forEach(([n, k]) =>
+    li(bk, '<span style="flex:1">' + n + '<div class="bar2"><i style="width:' + m1[k] + '%"></i></div></span><em>' + m0[k] + ' → ' + m1[k] + '</em>'));
+
+  const ws = $('wstats'); ws.innerHTML = '';
+  const a = m0.stats, b = m1.stats;
+  [['Reading ease', a.ease.toFixed(0), b.ease.toFixed(0)], ['Grade level', a.grade.toFixed(1), b.grade.toFixed(1)],
+   ['Average sentence', a.avg.toFixed(1), b.avg.toFixed(1)], ['Sentence spread (CoV)', a.cov.toFixed(2), b.cov.toFixed(2)],
+   ['Vocabulary variety (MATTR)', a.mattr.toFixed(2), b.mattr.toFixed(2)], ['Repeated 3-word phrases', (a.trigram * 100).toFixed(1) + '%', (b.trigram * 100).toFixed(1) + '%'],
+   ['Contractions per 100 words', (a.contractionRate * 100).toFixed(1), (b.contractionRate * 100).toFixed(1)], ['Passive sentences', (a.passive * 100).toFixed(0) + '%', (b.passive * 100).toFixed(0) + '%']]
+    .forEach(([n, x, y]) => li(ws, '<span>' + n + '</span><em>' + x + ' → ' + y + '</em>'));
+
+  const prof2 = r.profile;
+  $('driftCard').hidden = !prof2;
+  if (prof2) {
+    const dr = $('drift'); dr.innerHTML = '';
+    const d0 = P.voiceDrift(src, prof2), d1 = P.voiceDrift(r.text, prof2);
+    li(dr, '<span>Distance from your voice (0 is a match)</span><em>' + d0.drift + ' → ' + d1.drift + '</em>');
+    d1.pulls.forEach(p => li(dr, '<span>' + safe(p) + '</span>', 'flag'));
+  }
+}
+async function runAI() {
+  const src = $('in').value;
+  if (!src.trim()) return;
+  const key = $('orKey').value.trim();
+  const status = $('aiStatus');
+  if (!key) { status.textContent = 'Paste your OpenRouter key first.'; return; }
+  const o = options();
+  const base = P.run(src, level, o);
+  aiAbort = new AbortController();
+  $('ai').disabled = true; $('aiStop').hidden = false; $('badge').textContent = 'talking to openrouter.ai'; $('badge').style.color = 'var(--warn)';
+  try {
+    const res = await P.polish(base.text, Object.assign({}, o, { key, model: $('orModel').value.trim() || 'openrouter/auto', signal: aiAbort.signal, onProgress: (i, n) => { status.textContent = i < n ? 'Rewriting part ' + (i + 1) + ' of ' + n + '...' : 'Finishing...'; } }));
+    const final = P.run(res.text, level, o);   // rule pass again: dashes, quotes, leftover tells
+    aiOverride = { key: src + '' + level + voice + o.keep.join() + o.quotes + o.contractions + o.sample, text: final.text, model: res.model, chunks: res.chunks, warnings: res.warnings };
+    status.textContent = 'Done. ' + res.chunks + ' part' + (res.chunks > 1 ? 's' : '') + (res.tokens ? ', ' + res.tokens + ' tokens' : '') + ', model ' + res.model + '.';
+    persist(); render();
+  } catch (e) {
+    status.textContent = e.name === 'AbortError' ? 'Cancelled.' : 'Failed: ' + e.message;
+  } finally {
+    aiAbort = null; $('ai').disabled = false; $('aiStop').hidden = true; $('badge').textContent = 'offline by default'; $('badge').style.color = '';
+  }
+}
+$('ai').addEventListener('click', runAI);
+$('aiStop').addEventListener('click', () => { if (aiAbort) aiAbort.abort(); });
+$('orRemember').addEventListener('change', persist);
+$('orModel').addEventListener('change', persist);
+const later = () => { clearTimeout(timer); if ($('live').checked) timer = setTimeout(render, 150); else persist(); };
+
+$('in').addEventListener('input', later);
+$('keep').addEventListener('input', later);
+$('voiceSample').addEventListener('input', later);
+$('go').addEventListener('click', render);
+document.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); render(); } });
+$('contr').addEventListener('change', render);
+$('quotes').addEventListener('change', render);
+$('live').addEventListener('change', persist);
+document.querySelectorAll('#level button').forEach(b => b.addEventListener('click', () => { level = +b.dataset.v; paint(); render(); }));
+document.querySelectorAll('#voice button').forEach(b => b.addEventListener('click', () => { voice = b.dataset.v; paint(); render(); }));
+document.querySelectorAll('#tabs button').forEach(b => b.addEventListener('click', () => { tab = b.dataset.t; paint(); render(); }));
+$('again').addEventListener('click', () => { if ($('out').value) { $('in').value = $('out').value; render(); } });
+$('copy').addEventListener('click', async () => {
+  const t = $('out').value; if (!t) return;
+  try { await navigator.clipboard.writeText(t); } catch (e) { $('out').hidden = false; $('out').select(); document.execCommand('copy'); paint(); }
+  const old = $('copy').textContent; $('copy').textContent = 'Copied'; setTimeout(() => $('copy').textContent = old, 1200);
+});
+$('save').addEventListener('click', () => {
+  const t = $('out').value; if (!t) return;
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([t], { type: 'text/plain' })); a.download = 'humanized.txt';
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+});
+function loadFile(f) {
+  if (!f) return;
+  const rd = new FileReader(); rd.onload = () => { $('in').value = String(rd.result); render(); }; rd.readAsText(f);
+}
+$('file').addEventListener('change', e => { loadFile(e.target.files[0]); e.target.value = ''; });
+const pane = $('inPane');
+['dragenter', 'dragover'].forEach(ev => pane.addEventListener(ev, e => { e.preventDefault(); pane.classList.add('drop'); }));
+['dragleave', 'drop'].forEach(ev => pane.addEventListener(ev, e => { e.preventDefault(); pane.classList.remove('drop'); }));
+pane.addEventListener('drop', e => loadFile(e.dataTransfer.files[0]));
+$('sample').addEventListener('click', () => {
+  $('in').value = "Great question! Here is an essay on this topic. I hope this helps!\n\nAI-assisted coding serves as an enduring testament to the transformative potential of large language models, marking a pivotal moment in the evolution of software development. In today’s rapidly evolving technological landscape, these groundbreaking tools—nestled at the intersection of research and practice—are reshaping how engineers ideate, iterate, and deliver, underscoring their vital role in modern workflows.\n\nAt its core, the value proposition is clear: streamlining processes, enhancing collaboration, and fostering alignment. It's not just about autocomplete; it's about unlocking creativity at scale, ensuring that organizations can remain agile while delivering seamless, intuitive, and powerful experiences to users.\n\nIndustry observers have noted that adoption has accelerated from hobbyist experiments to enterprise-wide rollouts. Additionally, the ability to generate documentation, tests, and refactors showcases how AI can contribute to better outcomes, highlighting the intricate interplay between automation and human judgment. A 2024 survey found 62% of 1,200 developers used tools like Copilot weekly (Smith et al., 2024). One reviewer called it “the most pivotal change in a decade”.\n\n- 💡 **Speed:** Code generation is significantly faster, reducing friction and empowering developers.\n- 🚀 **Quality:** Output quality has been enhanced through improved training, contributing to higher standards.\n\n## Strategic Negotiations And Global Partnerships\n\nIt could potentially be argued that these tools might have some positive effect. In order to fully realize this potential, teams must align with best practices.\n\nThat is the real win.\n\nIn conclusion, the future looks bright. Exciting times lie ahead as we continue this journey toward excellence. Let me know if you’d like me to expand on any section!";
+  render();
+});
+render();
+})();
+</script>
+</body>
+</html>

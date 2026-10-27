@@ -111,6 +111,23 @@ try { assert.strictEqual(ops.map(o => o.t === '+' ? '' : o.v).join(''), 'a b c')
 for (const s of ['', '   ', '\n\n']) { try { assert.strictEqual(P.run(s).text, ''); pass++; } catch (e) { fail++; console.log('FAIL empty'); } }
 
 
+
+// Merged ruleset reaches the model as the system prompt; the key never does
+(async () => {
+  try {
+    let seen;
+    const grab = async (url, init) => { seen = JSON.parse(init.body); return { ok: true, json: async () => ({ choices: [{ message: { content: 'ok' } }] }) }; };
+    await P.polish('Some text.', { key: 'SECRET-KEY-123', fetch: grab, voice: 'formal', sample: 'I write plain words and short lines. '.repeat(10) });
+    const sys = seen.messages[0].content;
+    for (const needle of ['A. Staging instead of stating', 'F. Wrong reader', 'Final self-check', 'Never add or drop a fact', 'Not X but Y', 'One-line closers', 'Forced triads', '__P0__', 'Formal and academic', 'It overrides the rules above, including the dash rule'])
+      assert(sys.includes(needle), 'prompt missing: ' + needle);
+    assert(!JSON.stringify(seen).includes('SECRET-KEY-123'), 'key must not appear in the request body');
+    await P.polish('Some text.', { key: 'k', fetch: grab });
+    assert(!seen.messages[0].content.includes('writing sample'), 'no sample section without a sample');
+    pass++;
+  } catch (e) { fail++; console.log('FAIL system prompt', e.message); }
+})();
+
 // OpenRouter polish, with a stub fetch (no network in tests)
 (async () => {
   const calls = [];

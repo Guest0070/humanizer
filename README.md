@@ -35,6 +35,11 @@ Nothing to install. OpenRouter is a plain HTTPS API, so the page (or the CLI) ca
 - **Scores:** a 0-100 AI-tell score from tell density, even rhythm, vocabulary variety and repeated phrases, with a verdict from Pristine to Pure AI smell.
 - **Needs a human:** things a program cannot fix honestly (vague attributions, formulaic outlooks, stacked triplets, "not only X but also Y") are flagged for you to rewrite with real specifics.
 - **Languages:** English first. A small Chinese and Arabic pass removes stock connectors and chatbot phrases.
+- **Batch text files:** open or drop multiple `.txt`, `.md`, `.tex`, or `.latex` files and download each result separately. Batch processing uses local rules only; it never calls OpenRouter.
+- **Word growth cap:** optionally keep the result within a chosen number of words above the original. If a rewrite exceeds the cap, the original is kept and the app reports that outcome.
+- **LaTeX safe:** math ($...$, $$...$$, equation and align environments), `\cite`, `\ref`, `\label`, comment lines and similar commands pass through untouched. Prose in sections and captions is still edited.
+- **.docx in and out:** open a Word file (text and headings are read) and download the result as .docx. The output is a plain document: fonts, tables, images and tracked changes of the original are not carried over. Needs a browser with DecompressionStream (any current Chrome, Edge, Firefox, Safari).
+- **Target words (AI polish only):** ask the model to land near a length. It is a request, not a guarantee; the status line and word counts show what you got.
 
 ## Limits
 

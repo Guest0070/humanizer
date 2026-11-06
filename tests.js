@@ -128,6 +128,42 @@ for (const s of ['', '   ', '\n\n']) { try { assert.strictEqual(P.run(s).text, '
   } catch (e) { fail++; console.log('FAIL system prompt', e.message); }
 })();
 
+
+// LaTeX protection, docx round trip, word target
+t('latex math kept', 'Moreover, $x = y^2$ holds, so we leverage it.', '$x = y^2$ holds, so we use it.');
+t('latex cite kept', 'We leverage prior work \\cite{smith2020} and Fig.~\\ref{fig:a}.', 'We use prior work \\cite{smith2020} and Fig.~\\ref{fig:a}.');
+t('latex env kept', 'We leverage this:\n\\begin{equation}\na + b = c\n\\end{equation}\nMoreover, it works.', 'We use this:\n\\begin{equation}\na + b = c\n\\end{equation}\nIt works.');
+t('latex comment kept', '% Moreover, TODO leverage\nWe leverage it.', '% Moreover, TODO leverage\nWe use it.');
+t('currency is not math', 'We leverage $5 or $10 budgets.', 'We use $5 or $10 budgets.');
+t('percent in prose', 'We leverage it in 62% of cases.', 'We use it in 62% of cases.');
+(async () => {
+  try {
+    const src = '# Title\n\nFirst paragraph with <angle> & "quotes".\n\n- item one\n- item two\n\nLast one.';
+    const back = await P.readDocx(P.writeDocx(src));
+    assert.strictEqual(back, src);
+    // A deflate-compressed archive, as Word writes it
+    const zlib = require('zlib');
+    const xmlDoc = '<w:document><w:body><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Intro</w:t></w:r></w:p><w:p><w:r><w:t xml:space="preserve">Hello </w:t></w:r><w:r><w:t>world &amp; more.</w:t></w:r></w:p></w:body></w:document>';
+    const data = zlib.deflateRawSync(Buffer.from(xmlDoc)), name = Buffer.from('word/document.xml');
+    const le = (n, b) => { const x = Buffer.alloc(b); x.writeUIntLE(n, 0, b); return x; };
+    const local = Buffer.concat([le(0x04034b50, 4), le(20, 2), le(0, 2), le(8, 2), le(0, 4), le(0, 4), le(data.length, 4), le(xmlDoc.length, 4), le(name.length, 2), le(0, 2), name, data]);
+    const cen = Buffer.concat([le(0x02014b50, 4), le(20, 2), le(20, 2), le(0, 2), le(8, 2), le(0, 4), le(0, 4), le(data.length, 4), le(xmlDoc.length, 4), le(name.length, 2), le(0, 2), le(0, 2), le(0, 2), le(0, 2), le(0, 4), le(0, 4), name]);
+    const eocd = Buffer.concat([le(0x06054b50, 4), le(0, 2), le(0, 2), le(1, 2), le(1, 2), le(cen.length, 4), le(local.length, 4), le(0, 2)]);
+    assert.strictEqual(await P.readDocx(Buffer.concat([local, cen, eocd])), '# Intro\n\nHello world & more.');
+    await P.readDocx(Buffer.from('not a zip at all, just text padding'.repeat(3))).then(() => assert.fail('should reject'), e => assert.match(e.message, /Not a \.docx/));
+    pass++;
+  } catch (e) { fail++; console.log('FAIL docx', e.message); }
+  try {
+    const seen = [];
+    const grab = async (u, init) => { seen.push(JSON.parse(init.body).messages[0].content); return { ok: true, json: async () => ({ choices: [{ message: { content: 'ok' } }] }) }; };
+    await P.polish('word '.repeat(60) + '\n\n' + 'more '.repeat(60), { key: 'k', fetch: grab, targetWords: 100, chunkChars: 400 });
+    assert(seen.length === 2 && seen.every(x => /about 50 words/.test(x)), seen.map(x => (x.match(/about \d+ words/) || ['none'])[0]).join());
+    await P.polish('hello there', { key: 'k', fetch: grab });
+    assert(!/Length: this part/.test(seen[seen.length - 1]));
+    pass++;
+  } catch (e) { fail++; console.log('FAIL target words', e.message); }
+})();
+
 // OpenRouter polish, with a stub fetch (no network in tests)
 (async () => {
   const calls = [];

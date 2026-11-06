@@ -24,6 +24,7 @@ h1{margin:0;font-size:1.5rem;letter-spacing:-.01em}
 .seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
 label.chk{display:inline-flex;gap:6px;align-items:center;font-size:.9rem;cursor:pointer}
 input[type=text]{border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:8px;padding:6px 10px;font:inherit;font-size:.9rem;width:190px;max-width:100%}
+input[type=number]{border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:8px;padding:5px 7px;font:inherit;font-size:.9rem;width:72px}
 .spacer{flex:1}
 .btn{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:8px;padding:6px 12px;font:inherit;font-size:.9rem;cursor:pointer}
 .btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
@@ -96,12 +97,15 @@ textarea::placeholder{color:var(--mute)}
   <label class="chk"><input type="checkbox" id="live" checked> Live</label>
   <label class="chk" title="Text inside double quotes stays exactly as written"><input type="checkbox" id="quotes" checked> Keep quotes</label>
   <label class="chk" title="Comma separated. These stay exactly as written.">Keep <input type="text" id="keep" placeholder="brand names, jargon"></label>
+  <label class="chk" title="Keep the result within this many words of the original"><input type="checkbox" id="wordLimit"> Word growth cap <input type="number" id="wordGrowth" min="0" max="1000" value="0" aria-label="Maximum added words"></label>
   <span class="spacer"></span>
   <button class="btn" id="sample" type="button">Sample</button>
-  <label class="btn" for="file" style="cursor:pointer">Open file</label>
-  <input type="file" id="file" accept=".txt,.md,.markdown,.text" hidden>
+  <label class="btn" for="file" style="cursor:pointer">Open files</label>
+  <input type="file" id="file" accept=".txt,.md,.markdown,.text,.tex,.latex,.docx" multiple hidden>
   <button class="btn primary" id="go" type="button" title="Ctrl+Enter">Humanize</button>
 </div>
+
+<section class="card" id="batch" hidden style="margin:0 0 14px"><h3>Batch results <span class="sub">Processed locally with the rule engine</span></h3><ul id="batchList"></ul></section>
 
 <details class="voice" id="voiceBox">
   <summary>Match my voice (optional): paste a sample of your own writing, 60 words or more</summary>
@@ -117,6 +121,7 @@ textarea::placeholder{color:var(--mute)}
     <label class="chk">Model <input type="text" id="orModel" value="openrouter/auto" list="orModels" style="width:240px"></label>
     <datalist id="orModels"><option value="openrouter/auto"></datalist>
     <label class="chk" title="Stored unencrypted in this browser's local storage"><input type="checkbox" id="orRemember"> Remember key on this device</label>
+    <label class="chk" title="Ask the model to land near this length. Leave 0 for no target.">Target words <input type="number" id="orTarget" min="0" max="100000" value="0" aria-label="Target word count"></label>
     <button class="btn primary" id="ai" type="button">Humanize with AI</button>
     <button class="btn" id="aiStop" type="button" hidden>Cancel</button>
   </div>
@@ -125,7 +130,7 @@ textarea::placeholder{color:var(--mute)}
 
 <div class="cols">
   <section class="pane" id="inPane">
-    <div class="ph"><h2>Original</h2><span class="sub">drop a .txt or .md file here</span></div>
+    <div class="ph"><h2>Original</h2><span class="sub">drop .txt, .md, .tex or .docx files here</span></div>
     <textarea class="main" id="in" placeholder="Paste text here. Markdown is fine; code, links, citations, quotes, paths and version numbers are left alone." spellcheck="false"></textarea>
     <div class="foot" id="inStats"></div>
   </section>
@@ -138,6 +143,7 @@ textarea::placeholder{color:var(--mute)}
     <div class="foot">
       <button class="btn" id="copy" type="button">Copy</button>
       <button class="btn" id="save" type="button">Download .txt</button>
+      <button class="btn" id="saveDocx" type="button" title="Plain Word file: text and headings only">Download .docx</button>
       <button class="btn" id="again" type="button" title="Move the result back to the input and run another pass">Run again on result</button>
       <span id="outStats"></span>
     </div>
@@ -170,7 +176,7 @@ textarea::placeholder{color:var(--mute)}
 (function () {
 const $ = id => document.getElementById(id);
 const P = window.Plainspoken;
-let level = 2, voice = 'neutral', tab = 'text', timer, aiOverride = null, aiAbort = null;
+let level = 2, voice = 'neutral', tab = 'text', timer, aiOverride = null, aiAbort = null, batchUrls = [];
 
 try {
   const s = JSON.parse(localStorage.getItem('plainspoken') || '{}');
@@ -180,13 +186,15 @@ try {
   if (s.live === false) $('live').checked = false;
   if (s.quotes === false) $('quotes').checked = false;
   if (s.keep) $('keep').value = s.keep;
+  if (s.wordLimit) $('wordLimit').checked = true;
+  if (Number.isFinite(s.wordGrowth)) $('wordGrowth').value = s.wordGrowth;
   if (s.draft) $('in').value = s.draft;
   if (s.vsample) { $('voiceSample').value = s.vsample; $('voiceBox').open = true; }
   if (s.orModel) $('orModel').value = s.orModel;
   if (s.orKey) { $('orKey').value = s.orKey; $('orRemember').checked = true; $('aiBox').open = true; }
 } catch (e) {}
 function persist() {
-  try { localStorage.setItem('plainspoken', JSON.stringify({ level, voice, contr: $('contr').checked, live: $('live').checked, quotes: $('quotes').checked, keep: $('keep').value, draft: $('in').value.slice(0, 200000), vsample: $('voiceSample').value.slice(0, 50000), orModel: $('orModel').value, orKey: $('orRemember').checked ? $('orKey').value : '' })); } catch (e) {}
+  try { localStorage.setItem('plainspoken', JSON.stringify({ level, voice, contr: $('contr').checked, live: $('live').checked, quotes: $('quotes').checked, keep: $('keep').value, wordLimit: $('wordLimit').checked, wordGrowth: $('wordGrowth').valueAsNumber || 0, draft: $('in').value.slice(0, 200000), vsample: $('voiceSample').value.slice(0, 50000), orModel: $('orModel').value, orKey: $('orRemember').checked ? $('orKey').value : '' })); } catch (e) {}
 }
 function paint() {
   document.querySelectorAll('#level button').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.v === level)));
@@ -234,6 +242,9 @@ function render() {
   const aiKey = src + '' + level + voice + o.keep.join() + o.quotes + o.contractions + o.sample;
   if (aiOverride && aiOverride.key === aiKey) { r.text = aiOverride.text; r.changes.unshift({ label: 'AI polish (' + aiOverride.model + ')', n: aiOverride.chunks }); }
   else aiOverride = null;
+  const wordCap = $('wordLimit').checked ? P.stats(src).words + Math.max(0, $('wordGrowth').valueAsNumber || 0) : Infinity;
+  const overWordCap = P.stats(r.text).words > wordCap;
+  if (overWordCap) { r.text = src; r.changes = []; aiOverride = null; }
   $('out').value = r.text;
   if (tab === 'diff') renderDiff(src, r.text);
   if (tab === 'tells') renderTells(src, o);
@@ -250,6 +261,7 @@ function render() {
   r.changes.forEach(c => li(ch, '<span>' + safe(c.label) + '</span><em>' + c.n + '</em>'));
 
   const fl = $('flags'); fl.innerHTML = '';
+  if (overWordCap) li(fl, '<small>Word growth cap reached. Original kept within ' + wordCap + ' words.</small>', 'flag');
   const fc = P.checkFacts(src, r.text), kept = fc.total - fc.lost.length;
   $('sFacts').textContent = fc.total ? kept + '/' + fc.total : '–';
   $('sFacts').className = fc.lost.length ? 'warnc' : 'good';
@@ -293,7 +305,7 @@ async function runAI() {
   aiAbort = new AbortController();
   $('ai').disabled = true; $('aiStop').hidden = false; $('badge').textContent = 'talking to openrouter.ai'; $('badge').style.color = 'var(--warn)';
   try {
-    const res = await P.polish(base.text, Object.assign({}, o, { key, model: $('orModel').value.trim() || 'openrouter/auto', signal: aiAbort.signal, onProgress: (i, n) => { status.textContent = i < n ? 'Rewriting part ' + (i + 1) + ' of ' + n + '...' : 'Finishing...'; } }));
+    const res = await P.polish(base.text, Object.assign({}, o, { key, targetWords: $('orTarget').valueAsNumber || 0, model: $('orModel').value.trim() || 'openrouter/auto', signal: aiAbort.signal, onProgress: (i, n) => { status.textContent = i < n ? 'Rewriting part ' + (i + 1) + ' of ' + n + '...' : 'Finishing...'; } }));
     const final = P.run(res.text, level, o);   // rule pass again: dashes, quotes, leftover tells
     aiOverride = { key: src + '' + level + voice + o.keep.join() + o.quotes + o.contractions + o.sample, text: final.text, model: res.model, chunks: res.chunks, warnings: res.warnings };
     status.textContent = 'Done. ' + res.chunks + ' part' + (res.chunks > 1 ? 's' : '') + (res.tokens ? ', ' + res.tokens + ' tokens' : '') + ', model ' + res.model + '.';
@@ -312,6 +324,8 @@ const later = () => { clearTimeout(timer); if ($('live').checked) timer = setTim
 
 $('in').addEventListener('input', later);
 $('keep').addEventListener('input', later);
+$('wordLimit').addEventListener('change', render);
+$('wordGrowth').addEventListener('input', later);
 $('voiceSample').addEventListener('input', later);
 $('go').addEventListener('click', render);
 document.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); render(); } });
@@ -327,21 +341,42 @@ $('copy').addEventListener('click', async () => {
   try { await navigator.clipboard.writeText(t); } catch (e) { $('out').hidden = false; $('out').select(); document.execCommand('copy'); paint(); }
   const old = $('copy').textContent; $('copy').textContent = 'Copied'; setTimeout(() => $('copy').textContent = old, 1200);
 });
+$('saveDocx').addEventListener('click', () => {
+  const t = $('out').value; if (!t) return;
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([P.writeDocx(t)], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' })); a.download = 'humanized.docx';
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+});
 $('save').addEventListener('click', () => {
   const t = $('out').value; if (!t) return;
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([t], { type: 'text/plain' })); a.download = 'humanized.txt';
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 });
-function loadFile(f) {
-  if (!f) return;
-  const rd = new FileReader(); rd.onload = () => { $('in').value = String(rd.result); render(); }; rd.readAsText(f);
+async function loadFiles(files) {
+  if (!files || !files.length) return;
+  batchUrls.forEach(url => URL.revokeObjectURL(url)); batchUrls = [];
+  $('batchList').innerHTML = ''; $('batch').hidden = files.length < 2;
+  let records;
+  try { records = await Promise.all(Array.from(files, async f => ({ f, text: /\.docx$/i.test(f.name) ? await P.readDocx(await f.arrayBuffer()) : await f.text() }))); }
+  catch (e) { $('inStats').textContent = 'Could not read the file: ' + e.message; return; }
+  records.forEach(({ f, text }, i) => {
+    let result = P.run(text, level, options()).text;
+    if ($('wordLimit').checked && P.stats(result).words > P.stats(text).words + Math.max(0, $('wordGrowth').valueAsNumber || 0)) result = text;
+    const isDocx = /\.docx$/i.test(f.name);
+    const url = URL.createObjectURL(isDocx ? new Blob([P.writeDocx(result)], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }) : new Blob([result], { type: 'text/plain;charset=utf-8' })); batchUrls.push(url);
+    const row = document.createElement('li'), label = document.createElement('span'), link = document.createElement('a');
+    label.textContent = f.name + ' · ' + P.stats(result).words + ' words';
+    link.href = url; link.download = 'plainspoken-' + f.name.replace(/[\\/:*?"<>|]/g, '_'); link.textContent = 'Download';
+    row.append(label, link); $('batchList').appendChild(row);
+    if (i === 0) { $('in').value = text; render(); }
+  });
 }
-$('file').addEventListener('change', e => { loadFile(e.target.files[0]); e.target.value = ''; });
+$('file').addEventListener('change', e => { loadFiles(e.target.files); e.target.value = ''; });
 const pane = $('inPane');
 ['dragenter', 'dragover'].forEach(ev => pane.addEventListener(ev, e => { e.preventDefault(); pane.classList.add('drop'); }));
 ['dragleave', 'drop'].forEach(ev => pane.addEventListener(ev, e => { e.preventDefault(); pane.classList.remove('drop'); }));
-pane.addEventListener('drop', e => loadFile(e.dataTransfer.files[0]));
+pane.addEventListener('drop', e => loadFiles(e.dataTransfer.files));
 $('sample').addEventListener('click', () => {
   $('in').value = "Great question! Here is an essay on this topic. I hope this helps!\n\nAI-assisted coding serves as an enduring testament to the transformative potential of large language models, marking a pivotal moment in the evolution of software development. In today’s rapidly evolving technological landscape, these groundbreaking tools—nestled at the intersection of research and practice—are reshaping how engineers ideate, iterate, and deliver, underscoring their vital role in modern workflows.\n\nAt its core, the value proposition is clear: streamlining processes, enhancing collaboration, and fostering alignment. It's not just about autocomplete; it's about unlocking creativity at scale, ensuring that organizations can remain agile while delivering seamless, intuitive, and powerful experiences to users.\n\nIndustry observers have noted that adoption has accelerated from hobbyist experiments to enterprise-wide rollouts. Additionally, the ability to generate documentation, tests, and refactors showcases how AI can contribute to better outcomes, highlighting the intricate interplay between automation and human judgment. A 2024 survey found 62% of 1,200 developers used tools like Copilot weekly (Smith et al., 2024). One reviewer called it “the most pivotal change in a decade”.\n\n- 💡 **Speed:** Code generation is significantly faster, reducing friction and empowering developers.\n- 🚀 **Quality:** Output quality has been enhanced through improved training, contributing to higher standards.\n\n## Strategic Negotiations And Global Partnerships\n\nIt could potentially be argued that these tools might have some positive effect. In order to fully realize this potential, teams must align with best practices.\n\nThat is the real win.\n\nIn conclusion, the future looks bright. Exciting times lie ahead as we continue this journey toward excellence. Let me know if you’d like me to expand on any section!";
   render();

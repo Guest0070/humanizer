@@ -24,6 +24,7 @@ h1{margin:0;font-size:1.5rem;letter-spacing:-.01em}
 .seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
 label.chk{display:inline-flex;gap:6px;align-items:center;font-size:.9rem;cursor:pointer}
 input[type=text]{border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:8px;padding:6px 10px;font:inherit;font-size:.9rem;width:190px;max-width:100%}
+input[type=number]{border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:8px;padding:5px 7px;font:inherit;font-size:.9rem;width:72px}
 .spacer{flex:1}
 .btn{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:8px;padding:6px 12px;font:inherit;font-size:.9rem;cursor:pointer}
 .btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
@@ -96,12 +97,15 @@ textarea::placeholder{color:var(--mute)}
   <label class="chk"><input type="checkbox" id="live" checked> Live</label>
   <label class="chk" title="Text inside double quotes stays exactly as written"><input type="checkbox" id="quotes" checked> Keep quotes</label>
   <label class="chk" title="Comma separated. These stay exactly as written.">Keep <input type="text" id="keep" placeholder="brand names, jargon"></label>
+  <label class="chk" title="Keep the result within this many words of the original"><input type="checkbox" id="wordLimit"> Word growth cap <input type="number" id="wordGrowth" min="0" max="1000" value="0" aria-label="Maximum added words"></label>
   <span class="spacer"></span>
   <button class="btn" id="sample" type="button">Sample</button>
-  <label class="btn" for="file" style="cursor:pointer">Open file</label>
-  <input type="file" id="file" accept=".txt,.md,.markdown,.text" hidden>
+  <label class="btn" for="file" style="cursor:pointer">Open files</label>
+  <input type="file" id="file" accept=".txt,.md,.markdown,.text,.tex,.latex,.docx" multiple hidden>
   <button class="btn primary" id="go" type="button" title="Ctrl+Enter">Humanize</button>
 </div>
+
+<section class="card" id="batch" hidden style="margin:0 0 14px"><h3>Batch results <span class="sub">Processed locally with the rule engine</span></h3><ul id="batchList"></ul></section>
 
 <details class="voice" id="voiceBox">
   <summary>Match my voice (optional): paste a sample of your own writing, 60 words or more</summary>
@@ -117,6 +121,7 @@ textarea::placeholder{color:var(--mute)}
     <label class="chk">Model <input type="text" id="orModel" value="openrouter/auto" list="orModels" style="width:240px"></label>
     <datalist id="orModels"><option value="openrouter/auto"></datalist>
     <label class="chk" title="Stored unencrypted in this browser's local storage"><input type="checkbox" id="orRemember"> Remember key on this device</label>
+    <label class="chk" title="Ask the model to land near this length. Leave 0 for no target.">Target words <input type="number" id="orTarget" min="0" max="100000" value="0" aria-label="Target word count"></label>
     <button class="btn primary" id="ai" type="button">Humanize with AI</button>
     <button class="btn" id="aiStop" type="button" hidden>Cancel</button>
   </div>
@@ -125,7 +130,7 @@ textarea::placeholder{color:var(--mute)}
 
 <div class="cols">
   <section class="pane" id="inPane">
-    <div class="ph"><h2>Original</h2><span class="sub">drop a .txt or .md file here</span></div>
+    <div class="ph"><h2>Original</h2><span class="sub">drop .txt, .md, .tex or .docx files here</span></div>
     <textarea class="main" id="in" placeholder="Paste text here. Markdown is fine; code, links, citations, quotes, paths and version numbers are left alone." spellcheck="false"></textarea>
     <div class="foot" id="inStats"></div>
   </section>
@@ -138,6 +143,7 @@ textarea::placeholder{color:var(--mute)}
     <div class="foot">
       <button class="btn" id="copy" type="button">Copy</button>
       <button class="btn" id="save" type="button">Download .txt</button>
+      <button class="btn" id="saveDocx" type="button" title="Plain Word file: text and headings only">Download .docx</button>
       <button class="btn" id="again" type="button" title="Move the result back to the input and run another pass">Run again on result</button>
       <span id="outStats"></span>
     </div>
@@ -494,11 +500,20 @@ const FLAGS = [
 /* ------------------------------------------------------------------ *
  * Protection of spans that must not change
  * ------------------------------------------------------------------ */
+// LaTeX that must pass through untouched: math and code-like environments, display and inline math, comment lines,
+// and commands whose arguments are references or file names. Prose inside \section{}, \textbf{} and captions stays editable.
+const TEX_ENV = /\\begin\{(equation|align|gather|multline|eqnarray|displaymath|math|verbatim|lstlisting|minted|tikzpicture|tabular|algorithm|algorithmic|thebibliography)(\*?)\}[\s\S]*?\\end\{\1\2\}/g;
+const TEX_DISPLAY = /\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\)/g;
+const TEX_INLINE = /(?<![\\$\w])\$(?![\s$])[^$\n]{1,200}?(?<!\s)\$(?![\d$])/g;
+const TEX_COMMENT = /^[ \t]*%.*$/gm;
+const TEX_CMD = /\\(?:cite[a-z]*|ref|eqref|pageref|autoref|cref|Cref|label|url|href|includegraphics|bibliography|bibliographystyle|usepackage|documentclass|input|include|footnotemark|nocite|newcommand|renewcommand|setlength|vspace|hspace)\*?(?:\[[^\]\n]*\])*(?:\{[^{}\n]*\})*/g;
+
 function protect(text, o) {
   o = o || {};
   const store = [];
   const hold = m => { store.push(m); return '\uE000' + (store.length - 1) + '\uE001'; };
-  let t = text.replace(/```[\s\S]*?```|~~~[\s\S]*?~~~/g, hold).replace(/`[^`\n]+`/g, hold).replace(/^>.*$/gm, hold)
+  let t = text.replace(TEX_ENV, hold).replace(TEX_DISPLAY, hold).replace(TEX_COMMENT, hold).replace(TEX_CMD, hold).replace(TEX_INLINE, hold)
+    .replace(/```[\s\S]*?```|~~~[\s\S]*?~~~/g, hold).replace(/`[^`\n]+`/g, hold).replace(/^>.*$/gm, hold)
     .replace(/\]\([^)\s]+(?:\s+"[^"]*")?\)/g, hold)
     .replace(/\bhttps?:\/\/[^\s)\]"']*[^\s)\]"'.,;:!?]/g, hold).replace(/[\w.+-]+@[\w-]+\.[\w.]+/g, hold)
     .replace(/(?<![\w])[@#][A-Za-z_]\w*/g, m => m[0] === '#' && /^#[A-Za-z]/.test(m) ? hold(m) : m[0] === '@' ? hold(m) : m)
@@ -930,13 +945,14 @@ const VOICE_BRIEF = {
 };
 
 // Rules plus the few things this app needs on top: protected tokens, Markdown, output shape, voice, writing sample.
-function llmSystem(voice, sample) {
+function llmSystem(voice, sample, target) {
   let s = LLM_RULES + '\n\nApp requirements:\n' +
     '- Tokens like __P0__, __P1__ are protected spans (code, links, citations, quotes, names the user chose to keep). Copy each one exactly, once, in a sensible place. Never edit, split, translate or drop them.\n' +
     '- Keep the language, the paragraph breaks and any Markdown structure (headings, lists).\n' +
     '- Return only the rewritten text. No preface, no notes, no quotation marks around it.\n\n' +
     'Voice: ' + (VOICE_BRIEF[voice] || VOICE_BRIEF.neutral);
   if (sample) s += '\n\nThe user supplied a writing sample. It overrides the rules above, including the dash rule. Match its sentence length, word choice, punctuation, openings, transitions and spelling variety (British, Indian, American):\n"""\n' + sample.slice(0, 1500) + '\n"""';
+  if (target) s += '\n\nLength: this part should come out at about ' + target + ' words (within 10 percent). Reach it by cutting filler or by saying a point more fully. Never add facts to lengthen it, and never drop a claim to shorten it unless it is pure filler.';
   return s;
 }
 function llmChunks(masked, max) {
@@ -962,7 +978,8 @@ async function polish(text, cfg) {
   const { t, store } = protect(String(text || '').replace(/\r\n?/g, '\n'), cfg);
   const masked = t.replace(/(\d+)/g, (_, i) => '__P' + i + '__');
   const chunks = llmChunks(masked, cfg.chunkChars || 3000);
-  const system = llmSystem(voice, cfg.sample);
+  const wordsOf = x => (x.replace(/__P\d+__/g, 'w').match(/\S+/g) || []).length;
+  const totalWords = Math.max(1, wordsOf(masked));
   const warnings = [];
   const done = [];
   let usage = 0;
@@ -971,7 +988,7 @@ async function polish(text, cfg) {
     const res = await doFetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST', signal: cfg.signal,
       headers: { 'Authorization': 'Bearer ' + cfg.key, 'Content-Type': 'application/json', 'X-Title': 'Plainspoken' },
-      body: JSON.stringify({ model, temperature: cfg.temperature == null ? 0.7 : cfg.temperature, messages: [{ role: 'system', content: system }, { role: 'user', content: chunks[i] }] })
+      body: JSON.stringify({ model, temperature: cfg.temperature == null ? 0.7 : cfg.temperature, messages: [{ role: 'system', content: llmSystem(voice, cfg.sample, cfg.targetWords ? Math.max(5, Math.round(cfg.targetWords * wordsOf(chunks[i]) / totalWords)) : 0) }, { role: 'user', content: chunks[i] }] })
     });
     if (!res.ok) {
       let detail = '';
@@ -993,7 +1010,90 @@ async function polish(text, cfg) {
   return { text: joined, warnings, chunks: chunks.length, tokens: usage, model };
 }
 
-root.Plainspoken = { polish, run, score, metrics, stats, findFlags, checkFacts, readabilityGuard, highlights, diff, calibrate, voiceDrift, fingerprint, VOICES, RULES_COUNT: RULES.length + FLAGS.length };
+/* ------------------------------------------------------------------ *
+ * .docx in and out, no dependencies. Reads paragraph text and headings; writes a plain document.
+ * Fonts, tables, images and tracked changes of the original are not carried over.
+ * ------------------------------------------------------------------ */
+const u16 = (b, o) => b[o] | (b[o + 1] << 8);
+const u32 = (b, o) => (b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24)) >>> 0;
+const unxml = s => s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(+n)).replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16))).replace(/&amp;/g, '&');
+const xml = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+async function inflateRaw(bytes) {
+  if (typeof DecompressionStream !== 'function') throw new Error('This browser cannot unzip .docx (no DecompressionStream). Save the text as .txt instead.');
+  const ds = new DecompressionStream('deflate-raw');
+  const stream = new Blob([bytes]).stream().pipeThrough(ds);
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+async function readDocx(buf) {
+  const b = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+  let e = b.length - 22;
+  while (e >= 0 && u32(b, e) !== 0x06054b50) e--;
+  if (e < 0) throw new Error('Not a .docx file (no zip directory found)');
+  const count = u16(b, e + 10);
+  let p = u32(b, e + 16), entry = null;
+  for (let i = 0; i < count && u32(b, p) === 0x02014b50; i++) {
+    const method = u16(b, p + 10), csize = u32(b, p + 20), nlen = u16(b, p + 28), xlen = u16(b, p + 30), clen = u16(b, p + 32), off = u32(b, p + 42);
+    const name = new TextDecoder().decode(b.subarray(p + 46, p + 46 + nlen));
+    if (name === 'word/document.xml') entry = { method, csize, off };
+    p += 46 + nlen + xlen + clen;
+  }
+  if (!entry) throw new Error('word/document.xml not found: not a Word document');
+  const lh = entry.off, start = lh + 30 + u16(b, lh + 26) + u16(b, lh + 28);
+  const raw = b.subarray(start, start + entry.csize);
+  const data = entry.method === 0 ? raw : entry.method === 8 ? await inflateRaw(raw) : null;
+  if (!data) throw new Error('Unsupported zip compression method ' + entry.method);
+  const doc = new TextDecoder().decode(data);
+  const paras = [];
+  for (const m of doc.matchAll(/<w:p[ >][\s\S]*?<\/w:p>/g)) {
+    const p0 = m[0];
+    const text = unxml([...p0.matchAll(/<w:t(?: [^>]*)?>([^<]*)<\/w:t>|<w:tab\/>|<w:br\/>/g)].map(x => x[0] === '<w:tab/>' ? '\t' : x[0] === '<w:br/>' ? '\n' : x[1]).join(''));
+    if (!text.trim()) { paras.push(''); continue; }
+    const h = /<w:pStyle w:val="(?:Heading|heading)\s?(\d)"/.exec(p0);
+    paras.push(h ? '#'.repeat(+h[1]) + ' ' + text : /<w:numPr>/.test(p0) || /^•\s/.test(text) ? '- ' + text.replace(/^•\s*/, '') : text);
+  }
+  const out = [];
+  for (const x of paras) { if (x === '' && out[out.length - 1] === '') continue; out.push(x); }
+  return out.join('\n\n').replace(/\n{3,}/g, '\n\n').replace(/(^|\n)(- [^\n]*)\n\n(?=- )/g, '$1$2\n').trim();
+}
+
+const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+const crc32 = d => { let c = 0xFFFFFFFF; for (let i = 0; i < d.length; i++) c = CRC[(c ^ d[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; };
+
+function writeDocx(text) {
+  const enc = new TextEncoder();
+  const para = line => {
+    const h = /^(#{1,6})\s+(.*)$/.exec(line);
+    if (h) return '<w:p><w:pPr><w:pStyle w:val="Heading' + h[1].length + '"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="' + (40 - h[1].length * 4) + '"/></w:rPr><w:t xml:space="preserve">' + xml(h[2]) + '</w:t></w:r></w:p>';
+    const li = /^[-*]\s+(.*)$/.exec(line);
+    return '<w:p><w:r><w:t xml:space="preserve">' + xml(li ? '• ' + li[1] : line) + '</w:t></w:r></w:p>';
+  };
+  const body = String(text).replace(/\r\n?/g, '\n').split(/\n/).map(l => l.trim() ? para(l) : '').join('');
+  const files = [
+    ['[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>'],
+    ['_rels/.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>'],
+    ['word/document.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>' + body + '<w:sectPr/></w:body></w:document>']
+  ].map(([n, c]) => { const data = enc.encode(c); return { name: enc.encode(n), data, crc: crc32(data) }; });
+  const parts = [], central = [];
+  let off = 0;
+  const w16 = n => [n & 255, (n >> 8) & 255], w32 = n => [n & 255, (n >> 8) & 255, (n >> 16) & 255, (n >>> 24) & 255];
+  for (const f of files) {
+    const head = Uint8Array.from([].concat(w32(0x04034b50), w16(20), w16(0x0800), w16(0), w16(0), w16(0x21), w32(f.crc), w32(f.data.length), w32(f.data.length), w16(f.name.length), w16(0)));
+    parts.push(head, f.name, f.data);
+    central.push(Uint8Array.from([].concat(w32(0x02014b50), w16(20), w16(20), w16(0x0800), w16(0), w16(0), w16(0x21), w32(f.crc), w32(f.data.length), w32(f.data.length), w16(f.name.length), w16(0), w16(0), w16(0), w16(0), w32(0), w32(off))), f.name);
+    off += head.length + f.name.length + f.data.length;
+  }
+  const cdSize = central.reduce((a, x) => a + x.length, 0);
+  const end = Uint8Array.from([].concat(w32(0x06054b50), w16(0), w16(0), w16(files.length), w16(files.length), w32(cdSize), w32(off), w16(0)));
+  const all = parts.concat(central, [end]);
+  const out = new Uint8Array(all.reduce((a, x) => a + x.length, 0));
+  let o = 0;
+  for (const x of all) { out.set(x, o); o += x.length; }
+  return out;
+}
+
+root.Plainspoken = { readDocx, writeDocx, polish, run, score, metrics, stats, findFlags, checkFacts, readabilityGuard, highlights, diff, calibrate, voiceDrift, fingerprint, VOICES, RULES_COUNT: RULES.length + FLAGS.length };
 if (typeof module !== 'undefined') module.exports = root.Plainspoken;
 })(typeof window !== 'undefined' ? window : globalThis);
 
@@ -1003,7 +1103,7 @@ if (typeof module !== 'undefined') module.exports = root.Plainspoken;
 (function () {
 const $ = id => document.getElementById(id);
 const P = window.Plainspoken;
-let level = 2, voice = 'neutral', tab = 'text', timer, aiOverride = null, aiAbort = null;
+let level = 2, voice = 'neutral', tab = 'text', timer, aiOverride = null, aiAbort = null, batchUrls = [];
 
 try {
   const s = JSON.parse(localStorage.getItem('plainspoken') || '{}');
@@ -1013,13 +1113,15 @@ try {
   if (s.live === false) $('live').checked = false;
   if (s.quotes === false) $('quotes').checked = false;
   if (s.keep) $('keep').value = s.keep;
+  if (s.wordLimit) $('wordLimit').checked = true;
+  if (Number.isFinite(s.wordGrowth)) $('wordGrowth').value = s.wordGrowth;
   if (s.draft) $('in').value = s.draft;
   if (s.vsample) { $('voiceSample').value = s.vsample; $('voiceBox').open = true; }
   if (s.orModel) $('orModel').value = s.orModel;
   if (s.orKey) { $('orKey').value = s.orKey; $('orRemember').checked = true; $('aiBox').open = true; }
 } catch (e) {}
 function persist() {
-  try { localStorage.setItem('plainspoken', JSON.stringify({ level, voice, contr: $('contr').checked, live: $('live').checked, quotes: $('quotes').checked, keep: $('keep').value, draft: $('in').value.slice(0, 200000), vsample: $('voiceSample').value.slice(0, 50000), orModel: $('orModel').value, orKey: $('orRemember').checked ? $('orKey').value : '' })); } catch (e) {}
+  try { localStorage.setItem('plainspoken', JSON.stringify({ level, voice, contr: $('contr').checked, live: $('live').checked, quotes: $('quotes').checked, keep: $('keep').value, wordLimit: $('wordLimit').checked, wordGrowth: $('wordGrowth').valueAsNumber || 0, draft: $('in').value.slice(0, 200000), vsample: $('voiceSample').value.slice(0, 50000), orModel: $('orModel').value, orKey: $('orRemember').checked ? $('orKey').value : '' })); } catch (e) {}
 }
 function paint() {
   document.querySelectorAll('#level button').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.v === level)));
@@ -1067,6 +1169,9 @@ function render() {
   const aiKey = src + '' + level + voice + o.keep.join() + o.quotes + o.contractions + o.sample;
   if (aiOverride && aiOverride.key === aiKey) { r.text = aiOverride.text; r.changes.unshift({ label: 'AI polish (' + aiOverride.model + ')', n: aiOverride.chunks }); }
   else aiOverride = null;
+  const wordCap = $('wordLimit').checked ? P.stats(src).words + Math.max(0, $('wordGrowth').valueAsNumber || 0) : Infinity;
+  const overWordCap = P.stats(r.text).words > wordCap;
+  if (overWordCap) { r.text = src; r.changes = []; aiOverride = null; }
   $('out').value = r.text;
   if (tab === 'diff') renderDiff(src, r.text);
   if (tab === 'tells') renderTells(src, o);
@@ -1083,6 +1188,7 @@ function render() {
   r.changes.forEach(c => li(ch, '<span>' + safe(c.label) + '</span><em>' + c.n + '</em>'));
 
   const fl = $('flags'); fl.innerHTML = '';
+  if (overWordCap) li(fl, '<small>Word growth cap reached. Original kept within ' + wordCap + ' words.</small>', 'flag');
   const fc = P.checkFacts(src, r.text), kept = fc.total - fc.lost.length;
   $('sFacts').textContent = fc.total ? kept + '/' + fc.total : '–';
   $('sFacts').className = fc.lost.length ? 'warnc' : 'good';
@@ -1126,7 +1232,7 @@ async function runAI() {
   aiAbort = new AbortController();
   $('ai').disabled = true; $('aiStop').hidden = false; $('badge').textContent = 'talking to openrouter.ai'; $('badge').style.color = 'var(--warn)';
   try {
-    const res = await P.polish(base.text, Object.assign({}, o, { key, model: $('orModel').value.trim() || 'openrouter/auto', signal: aiAbort.signal, onProgress: (i, n) => { status.textContent = i < n ? 'Rewriting part ' + (i + 1) + ' of ' + n + '...' : 'Finishing...'; } }));
+    const res = await P.polish(base.text, Object.assign({}, o, { key, targetWords: $('orTarget').valueAsNumber || 0, model: $('orModel').value.trim() || 'openrouter/auto', signal: aiAbort.signal, onProgress: (i, n) => { status.textContent = i < n ? 'Rewriting part ' + (i + 1) + ' of ' + n + '...' : 'Finishing...'; } }));
     const final = P.run(res.text, level, o);   // rule pass again: dashes, quotes, leftover tells
     aiOverride = { key: src + '' + level + voice + o.keep.join() + o.quotes + o.contractions + o.sample, text: final.text, model: res.model, chunks: res.chunks, warnings: res.warnings };
     status.textContent = 'Done. ' + res.chunks + ' part' + (res.chunks > 1 ? 's' : '') + (res.tokens ? ', ' + res.tokens + ' tokens' : '') + ', model ' + res.model + '.';
@@ -1145,6 +1251,8 @@ const later = () => { clearTimeout(timer); if ($('live').checked) timer = setTim
 
 $('in').addEventListener('input', later);
 $('keep').addEventListener('input', later);
+$('wordLimit').addEventListener('change', render);
+$('wordGrowth').addEventListener('input', later);
 $('voiceSample').addEventListener('input', later);
 $('go').addEventListener('click', render);
 document.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); render(); } });
@@ -1160,21 +1268,42 @@ $('copy').addEventListener('click', async () => {
   try { await navigator.clipboard.writeText(t); } catch (e) { $('out').hidden = false; $('out').select(); document.execCommand('copy'); paint(); }
   const old = $('copy').textContent; $('copy').textContent = 'Copied'; setTimeout(() => $('copy').textContent = old, 1200);
 });
+$('saveDocx').addEventListener('click', () => {
+  const t = $('out').value; if (!t) return;
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([P.writeDocx(t)], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' })); a.download = 'humanized.docx';
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+});
 $('save').addEventListener('click', () => {
   const t = $('out').value; if (!t) return;
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([t], { type: 'text/plain' })); a.download = 'humanized.txt';
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 });
-function loadFile(f) {
-  if (!f) return;
-  const rd = new FileReader(); rd.onload = () => { $('in').value = String(rd.result); render(); }; rd.readAsText(f);
+async function loadFiles(files) {
+  if (!files || !files.length) return;
+  batchUrls.forEach(url => URL.revokeObjectURL(url)); batchUrls = [];
+  $('batchList').innerHTML = ''; $('batch').hidden = files.length < 2;
+  let records;
+  try { records = await Promise.all(Array.from(files, async f => ({ f, text: /\.docx$/i.test(f.name) ? await P.readDocx(await f.arrayBuffer()) : await f.text() }))); }
+  catch (e) { $('inStats').textContent = 'Could not read the file: ' + e.message; return; }
+  records.forEach(({ f, text }, i) => {
+    let result = P.run(text, level, options()).text;
+    if ($('wordLimit').checked && P.stats(result).words > P.stats(text).words + Math.max(0, $('wordGrowth').valueAsNumber || 0)) result = text;
+    const isDocx = /\.docx$/i.test(f.name);
+    const url = URL.createObjectURL(isDocx ? new Blob([P.writeDocx(result)], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }) : new Blob([result], { type: 'text/plain;charset=utf-8' })); batchUrls.push(url);
+    const row = document.createElement('li'), label = document.createElement('span'), link = document.createElement('a');
+    label.textContent = f.name + ' · ' + P.stats(result).words + ' words';
+    link.href = url; link.download = 'plainspoken-' + f.name.replace(/[\\/:*?"<>|]/g, '_'); link.textContent = 'Download';
+    row.append(label, link); $('batchList').appendChild(row);
+    if (i === 0) { $('in').value = text; render(); }
+  });
 }
-$('file').addEventListener('change', e => { loadFile(e.target.files[0]); e.target.value = ''; });
+$('file').addEventListener('change', e => { loadFiles(e.target.files); e.target.value = ''; });
 const pane = $('inPane');
 ['dragenter', 'dragover'].forEach(ev => pane.addEventListener(ev, e => { e.preventDefault(); pane.classList.add('drop'); }));
 ['dragleave', 'drop'].forEach(ev => pane.addEventListener(ev, e => { e.preventDefault(); pane.classList.remove('drop'); }));
-pane.addEventListener('drop', e => loadFile(e.dataTransfer.files[0]));
+pane.addEventListener('drop', e => loadFiles(e.dataTransfer.files));
 $('sample').addEventListener('click', () => {
   $('in').value = "Great question! Here is an essay on this topic. I hope this helps!\n\nAI-assisted coding serves as an enduring testament to the transformative potential of large language models, marking a pivotal moment in the evolution of software development. In today’s rapidly evolving technological landscape, these groundbreaking tools—nestled at the intersection of research and practice—are reshaping how engineers ideate, iterate, and deliver, underscoring their vital role in modern workflows.\n\nAt its core, the value proposition is clear: streamlining processes, enhancing collaboration, and fostering alignment. It's not just about autocomplete; it's about unlocking creativity at scale, ensuring that organizations can remain agile while delivering seamless, intuitive, and powerful experiences to users.\n\nIndustry observers have noted that adoption has accelerated from hobbyist experiments to enterprise-wide rollouts. Additionally, the ability to generate documentation, tests, and refactors showcases how AI can contribute to better outcomes, highlighting the intricate interplay between automation and human judgment. A 2024 survey found 62% of 1,200 developers used tools like Copilot weekly (Smith et al., 2024). One reviewer called it “the most pivotal change in a decade”.\n\n- 💡 **Speed:** Code generation is significantly faster, reducing friction and empowering developers.\n- 🚀 **Quality:** Output quality has been enhanced through improved training, contributing to higher standards.\n\n## Strategic Negotiations And Global Partnerships\n\nIt could potentially be argued that these tools might have some positive effect. In order to fully realize this potential, teams must align with best practices.\n\nThat is the real win.\n\nIn conclusion, the future looks bright. Exciting times lie ahead as we continue this journey toward excellence. Let me know if you’d like me to expand on any section!";
   render();

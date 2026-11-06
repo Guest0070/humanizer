@@ -329,11 +329,20 @@ const FLAGS = [
 /* ------------------------------------------------------------------ *
  * Protection of spans that must not change
  * ------------------------------------------------------------------ */
+// LaTeX that must pass through untouched: math and code-like environments, display and inline math, comment lines,
+// and commands whose arguments are references or file names. Prose inside \section{}, \textbf{} and captions stays editable.
+const TEX_ENV = /\\begin\{(equation|align|gather|multline|eqnarray|displaymath|math|verbatim|lstlisting|minted|tikzpicture|tabular|algorithm|algorithmic|thebibliography)(\*?)\}[\s\S]*?\\end\{\1\2\}/g;
+const TEX_DISPLAY = /\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\)/g;
+const TEX_INLINE = /(?<![\\$\w])\$(?![\s$])[^$\n]{1,200}?(?<!\s)\$(?![\d$])/g;
+const TEX_COMMENT = /^[ \t]*%.*$/gm;
+const TEX_CMD = /\\(?:cite[a-z]*|ref|eqref|pageref|autoref|cref|Cref|label|url|href|includegraphics|bibliography|bibliographystyle|usepackage|documentclass|input|include|footnotemark|nocite|newcommand|renewcommand|setlength|vspace|hspace)\*?(?:\[[^\]\n]*\])*(?:\{[^{}\n]*\})*/g;
+
 function protect(text, o) {
   o = o || {};
   const store = [];
   const hold = m => { store.push(m); return '\uE000' + (store.length - 1) + '\uE001'; };
-  let t = text.replace(/```[\s\S]*?```|~~~[\s\S]*?~~~/g, hold).replace(/`[^`\n]+`/g, hold).replace(/^>.*$/gm, hold)
+  let t = text.replace(TEX_ENV, hold).replace(TEX_DISPLAY, hold).replace(TEX_COMMENT, hold).replace(TEX_CMD, hold).replace(TEX_INLINE, hold)
+    .replace(/```[\s\S]*?```|~~~[\s\S]*?~~~/g, hold).replace(/`[^`\n]+`/g, hold).replace(/^>.*$/gm, hold)
     .replace(/\]\([^)\s]+(?:\s+"[^"]*")?\)/g, hold)
     .replace(/\bhttps?:\/\/[^\s)\]"']*[^\s)\]"'.,;:!?]/g, hold).replace(/[\w.+-]+@[\w-]+\.[\w.]+/g, hold)
     .replace(/(?<![\w])[@#][A-Za-z_]\w*/g, m => m[0] === '#' && /^#[A-Za-z]/.test(m) ? hold(m) : m[0] === '@' ? hold(m) : m)
@@ -765,13 +774,14 @@ const VOICE_BRIEF = {
 };
 
 // Rules plus the few things this app needs on top: protected tokens, Markdown, output shape, voice, writing sample.
-function llmSystem(voice, sample) {
+function llmSystem(voice, sample, target) {
   let s = LLM_RULES + '\n\nApp requirements:\n' +
     '- Tokens like __P0__, __P1__ are protected spans (code, links, citations, quotes, names the user chose to keep). Copy each one exactly, once, in a sensible place. Never edit, split, translate or drop them.\n' +
     '- Keep the language, the paragraph breaks and any Markdown structure (headings, lists).\n' +
     '- Return only the rewritten text. No preface, no notes, no quotation marks around it.\n\n' +
     'Voice: ' + (VOICE_BRIEF[voice] || VOICE_BRIEF.neutral);
   if (sample) s += '\n\nThe user supplied a writing sample. It overrides the rules above, including the dash rule. Match its sentence length, word choice, punctuation, openings, transitions and spelling variety (British, Indian, American):\n"""\n' + sample.slice(0, 1500) + '\n"""';
+  if (target) s += '\n\nLength: this part should come out at about ' + target + ' words (within 10 percent). Reach it by cutting filler or by saying a point more fully. Never add facts to lengthen it, and never drop a claim to shorten it unless it is pure filler.';
   return s;
 }
 function llmChunks(masked, max) {
@@ -797,7 +807,8 @@ async function polish(text, cfg) {
   const { t, store } = protect(String(text || '').replace(/\r\n?/g, '\n'), cfg);
   const masked = t.replace(/(\d+)/g, (_, i) => '__P' + i + '__');
   const chunks = llmChunks(masked, cfg.chunkChars || 3000);
-  const system = llmSystem(voice, cfg.sample);
+  const wordsOf = x => (x.replace(/__P\d+__/g, 'w').match(/\S+/g) || []).length;
+  const totalWords = Math.max(1, wordsOf(masked));
   const warnings = [];
   const done = [];
   let usage = 0;
@@ -806,7 +817,7 @@ async function polish(text, cfg) {
     const res = await doFetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST', signal: cfg.signal,
       headers: { 'Authorization': 'Bearer ' + cfg.key, 'Content-Type': 'application/json', 'X-Title': 'Plainspoken' },
-      body: JSON.stringify({ model, temperature: cfg.temperature == null ? 0.7 : cfg.temperature, messages: [{ role: 'system', content: system }, { role: 'user', content: chunks[i] }] })
+      body: JSON.stringify({ model, temperature: cfg.temperature == null ? 0.7 : cfg.temperature, messages: [{ role: 'system', content: llmSystem(voice, cfg.sample, cfg.targetWords ? Math.max(5, Math.round(cfg.targetWords * wordsOf(chunks[i]) / totalWords)) : 0) }, { role: 'user', content: chunks[i] }] })
     });
     if (!res.ok) {
       let detail = '';
@@ -828,6 +839,89 @@ async function polish(text, cfg) {
   return { text: joined, warnings, chunks: chunks.length, tokens: usage, model };
 }
 
-root.Plainspoken = { polish, run, score, metrics, stats, findFlags, checkFacts, readabilityGuard, highlights, diff, calibrate, voiceDrift, fingerprint, VOICES, RULES_COUNT: RULES.length + FLAGS.length };
+/* ------------------------------------------------------------------ *
+ * .docx in and out, no dependencies. Reads paragraph text and headings; writes a plain document.
+ * Fonts, tables, images and tracked changes of the original are not carried over.
+ * ------------------------------------------------------------------ */
+const u16 = (b, o) => b[o] | (b[o + 1] << 8);
+const u32 = (b, o) => (b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24)) >>> 0;
+const unxml = s => s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(+n)).replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16))).replace(/&amp;/g, '&');
+const xml = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+async function inflateRaw(bytes) {
+  if (typeof DecompressionStream !== 'function') throw new Error('This browser cannot unzip .docx (no DecompressionStream). Save the text as .txt instead.');
+  const ds = new DecompressionStream('deflate-raw');
+  const stream = new Blob([bytes]).stream().pipeThrough(ds);
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+async function readDocx(buf) {
+  const b = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+  let e = b.length - 22;
+  while (e >= 0 && u32(b, e) !== 0x06054b50) e--;
+  if (e < 0) throw new Error('Not a .docx file (no zip directory found)');
+  const count = u16(b, e + 10);
+  let p = u32(b, e + 16), entry = null;
+  for (let i = 0; i < count && u32(b, p) === 0x02014b50; i++) {
+    const method = u16(b, p + 10), csize = u32(b, p + 20), nlen = u16(b, p + 28), xlen = u16(b, p + 30), clen = u16(b, p + 32), off = u32(b, p + 42);
+    const name = new TextDecoder().decode(b.subarray(p + 46, p + 46 + nlen));
+    if (name === 'word/document.xml') entry = { method, csize, off };
+    p += 46 + nlen + xlen + clen;
+  }
+  if (!entry) throw new Error('word/document.xml not found: not a Word document');
+  const lh = entry.off, start = lh + 30 + u16(b, lh + 26) + u16(b, lh + 28);
+  const raw = b.subarray(start, start + entry.csize);
+  const data = entry.method === 0 ? raw : entry.method === 8 ? await inflateRaw(raw) : null;
+  if (!data) throw new Error('Unsupported zip compression method ' + entry.method);
+  const doc = new TextDecoder().decode(data);
+  const paras = [];
+  for (const m of doc.matchAll(/<w:p[ >][\s\S]*?<\/w:p>/g)) {
+    const p0 = m[0];
+    const text = unxml([...p0.matchAll(/<w:t(?: [^>]*)?>([^<]*)<\/w:t>|<w:tab\/>|<w:br\/>/g)].map(x => x[0] === '<w:tab/>' ? '\t' : x[0] === '<w:br/>' ? '\n' : x[1]).join(''));
+    if (!text.trim()) { paras.push(''); continue; }
+    const h = /<w:pStyle w:val="(?:Heading|heading)\s?(\d)"/.exec(p0);
+    paras.push(h ? '#'.repeat(+h[1]) + ' ' + text : /<w:numPr>/.test(p0) || /^•\s/.test(text) ? '- ' + text.replace(/^•\s*/, '') : text);
+  }
+  const out = [];
+  for (const x of paras) { if (x === '' && out[out.length - 1] === '') continue; out.push(x); }
+  return out.join('\n\n').replace(/\n{3,}/g, '\n\n').replace(/(^|\n)(- [^\n]*)\n\n(?=- )/g, '$1$2\n').trim();
+}
+
+const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+const crc32 = d => { let c = 0xFFFFFFFF; for (let i = 0; i < d.length; i++) c = CRC[(c ^ d[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; };
+
+function writeDocx(text) {
+  const enc = new TextEncoder();
+  const para = line => {
+    const h = /^(#{1,6})\s+(.*)$/.exec(line);
+    if (h) return '<w:p><w:pPr><w:pStyle w:val="Heading' + h[1].length + '"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="' + (40 - h[1].length * 4) + '"/></w:rPr><w:t xml:space="preserve">' + xml(h[2]) + '</w:t></w:r></w:p>';
+    const li = /^[-*]\s+(.*)$/.exec(line);
+    return '<w:p><w:r><w:t xml:space="preserve">' + xml(li ? '• ' + li[1] : line) + '</w:t></w:r></w:p>';
+  };
+  const body = String(text).replace(/\r\n?/g, '\n').split(/\n/).map(l => l.trim() ? para(l) : '').join('');
+  const files = [
+    ['[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>'],
+    ['_rels/.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>'],
+    ['word/document.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>' + body + '<w:sectPr/></w:body></w:document>']
+  ].map(([n, c]) => { const data = enc.encode(c); return { name: enc.encode(n), data, crc: crc32(data) }; });
+  const parts = [], central = [];
+  let off = 0;
+  const w16 = n => [n & 255, (n >> 8) & 255], w32 = n => [n & 255, (n >> 8) & 255, (n >> 16) & 255, (n >>> 24) & 255];
+  for (const f of files) {
+    const head = Uint8Array.from([].concat(w32(0x04034b50), w16(20), w16(0x0800), w16(0), w16(0), w16(0x21), w32(f.crc), w32(f.data.length), w32(f.data.length), w16(f.name.length), w16(0)));
+    parts.push(head, f.name, f.data);
+    central.push(Uint8Array.from([].concat(w32(0x02014b50), w16(20), w16(20), w16(0x0800), w16(0), w16(0), w16(0x21), w32(f.crc), w32(f.data.length), w32(f.data.length), w16(f.name.length), w16(0), w16(0), w16(0), w16(0), w32(0), w32(off))), f.name);
+    off += head.length + f.name.length + f.data.length;
+  }
+  const cdSize = central.reduce((a, x) => a + x.length, 0);
+  const end = Uint8Array.from([].concat(w32(0x06054b50), w16(0), w16(0), w16(files.length), w16(files.length), w32(cdSize), w32(off), w16(0)));
+  const all = parts.concat(central, [end]);
+  const out = new Uint8Array(all.reduce((a, x) => a + x.length, 0));
+  let o = 0;
+  for (const x of all) { out.set(x, o); o += x.length; }
+  return out;
+}
+
+root.Plainspoken = { readDocx, writeDocx, polish, run, score, metrics, stats, findFlags, checkFacts, readabilityGuard, highlights, diff, calibrate, voiceDrift, fingerprint, VOICES, RULES_COUNT: RULES.length + FLAGS.length };
 if (typeof module !== 'undefined') module.exports = root.Plainspoken;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -34,7 +34,7 @@ t('copula', 'The gallery serves as a hub and boasts four rooms.', 'The gallery i
 t('can serve', 'It can serve as a guide.', 'It can be a guide.');
 t('ing tail', 'The firm opened in 1989, marking a pivotal moment in regional history.', 'The firm opened in 1989.');
 t('neg parallel', "It's not just a song, it's a statement.", "It's a statement.");
-t('article fix', 'It is a stunning, unique view.', "It's a unique view.");
+t('article fix', 'It is a stunning, unique view.', 'It is a unique view.');
 t('article an', 'This is a vibrant idea.', "This is an idea.".replace('an', 'an'), {}, 2);
 t('transition', 'It rained. Additionally, it was cold.', 'It rained. It was cold.');
 t('hedge', 'It could potentially help.', 'It could help.');
@@ -68,11 +68,67 @@ t('heading restated', '## Performance\n\nPerformance matters.\n\nUsers leave slo
 t('predicate hyphen', 'The report is high-quality. A high-quality report.', 'The report is high quality. A high-quality report.');
 t('formal expands', "We don't know. It's fine. I'm sure.", 'We do not know. It is fine. I am sure.', { voice: 'formal' });
 t('formal linked to', 'It is linked to growth.', 'It is associated with growth.', { voice: 'formal' });
+t('student semicolon', 'The model is fast; it is also cheap.', 'The model is fast. It is also cheap.', { voice: 'student' });
+t('student openers', 'It works. However, it is slow. Therefore, we stop.', 'It works. But it is slow. So we stop.', { voice: 'student' });
+t('student words', 'We obtained sufficient data to demonstrate this.', 'We got enough data to show this.', { voice: 'student' });
+t('student expands', "We don't know. It's fine.", 'We do not know. It is fine.', { voice: 'student' });
 t('technical keeps robust', 'A robust cache.', 'A robust cache.', { voice: 'technical' });
 t('casual however', 'However, we lost.', 'But we lost.', { voice: 'casual' });
 t('zh connectors', '在当今数字时代，综上所述，我们赋能企业。', '我们帮助企业。');
 t('tail kept in list', 'The aim is clear: streamlining work, enhancing teams, and fostering trust.', /streamlining|simplifying/, {}, 3);
 t('ing tail cut', 'The firm opened in 1989, marking a pivotal moment in history.', 'The firm opened in 1989.');
+
+// Refinement pass: damage the benchmark found, each pinned so it cannot come back.
+t('article after swap', 'It played a crucial role.', 'It played an important role.');
+t('article left alone for h and u', 'An historic win, a unanimous vote, an hour.', 'An historic win, a unanimous vote, an hour.');
+t('synonyms collapsed', 'It remains a multifaceted and complex chapter.', 'It remains a complex chapter.');
+t('myriad with article', 'It offers a myriad of benefits.', 'It offers many benefits.');
+t('range with mass noun', 'They hire a diverse array of talent from abroad.', 'They hire a range of talent from abroad.');
+t('range with plural', 'It supports a wide range of use cases.', 'It supports many use cases.');
+t('promo before and', 'This library provides a robust and scalable solution.', 'This library provides a scalable solution.');
+t('promo predicate kept', 'The view is stunning and the food is great.', 'The view is stunning and the food is great.');
+t('noun hype', 'A must-read for fans.', 'Worth reading for fans.');
+t('have as possession', 'You have a store. I have a car.', 'You have a store. I have a car.', { register: 'informal' });
+t('have as helper', 'We have been there. You have seen it.', "We've been there. You've seen it.", { register: 'informal' });
+t('stressed verb kept', 'People who shaped who I am today.', 'People who shaped who I am today.', { register: 'informal' });
+t('impersonal keeps register', 'The council does not agree. It is late.', 'The council does not agree. It is late.');
+t('academic keeps register', 'Prior work (Smith, 2020) does not agree.', 'Prior work (Smith, 2020) does not agree.');
+t('dash before clause', 'Flexibility is a perk — it is not a right.', 'Flexibility is a perk. It is not a right.');
+t('no longer contrast', 'Flexibility is no longer a perk — it\'s a necessity.', 'Flexibility is now a necessity, not a perk.');
+t('isn\'t just', 'The AuraBrew isn\'t just a coffee maker — it\'s a lifestyle upgrade.', 'The AuraBrew is a lifestyle upgrade.');
+t('split contrast', 'Growth isn\'t about hacks. It\'s about people.', 'Growth is about people.');
+t('two claims kept', 'Paris isn\'t cheap. It\'s still worth it.', /isn't cheap/);
+t('not only but also', 'This shift not only altered living conditions but also gave rise to a new class.', 'This shift altered living conditions and gave rise to a new class.');
+t('rider with a fact kept', 'Sales rose, contributing to a 20% rise in profit.', 'Sales rose. This contributed to a 20% rise in profit.');
+t('rider made a sentence', 'The library is compatible with TypeScript, ensuring type safety throughout your app.', 'The library is compatible with TypeScript. This ensures type safety throughout your app.', {}, 3);
+t('rider past tense', 'The engine played a role, enabling factories to run faster and paving the way for mass production.', 'The engine played a role. This enabled factories to run faster and opened the way to mass production.', {}, 3);
+t('empty rider cut', 'We rebuilt the cache, ensuring success.', 'We rebuilt the cache.', {}, 3);
+t('enumerated list untouched', 'Our work has three parts: (i) a design, (ii) a proof, and (iii) tests on 12 sets, demonstrating strong results.', /demonstrating strong results/, {}, 3);
+t('participle after have', 'LSTMs have demonstrated strong results.', 'LSTMs have shown strong results.', { voice: 'student' });
+t('heading sentence case', '# The Future Of Remote Work: Navigating A New Era\n\nText.', '# The future of remote work: navigating a new era\n\nText.');
+t('heading keeps names', '## Working In London Today\n\nI moved to London in May.', '## Working in London today\n\nI moved to London in May.');
+t('numbered heading', '## 1. Prioritize Your Tasks\n\nText.', '## 1. Prioritize your tasks\n\nText.');
+t('short line after heading kept', '## Notes\n\nWe met in London.', '## Notes\n\nWe met in London.');
+t('preamble after opener', 'Certainly! Here\'s a blog post about remote work:\n\nRemote work grew.', 'Remote work grew.');
+t('please hesitate', 'Thanks. Please don\'t hesitate to reach out. I am around.', 'Thanks. I am around.', { contractions: false });
+t('email pleasantry', 'Hi Sam,\n\nI hope this email finds you well! I wanted to take a moment to ask about Q3.', 'Hi Sam,\n\nI wanted to ask about Q3.');
+t('consecutive drops', 'Focus wins. That\'s the real lesson. Let that sink in. Ship it.', 'Focus wins. Ship it.');
+t('question praise', 'Choosing X is a great question, and the answer depends on your goals.', 'Choosing X depends on your goals.');
+t('next level', 'You can take your productivity to the next level.', 'You can improve your productivity.');
+t('unlock potential', 'Teams can unlock their full potential.', 'Teams can reach their full potential.');
+t('robust statistics kept', 'We used robust standard errors.', 'We used robust standard errors.');
+t('dot word kept', '- **.docx in and out:** open a file.', '- .docx in and out: open a file.');
+t('code inside protects tex', 'Use `\\cite` and `\\ref` here.', 'Use `\\cite` and `\\ref` here.');
+t('echo after swap', 'Output quality has been enhanced through improved training.', 'Output quality has been improved through better training.');
+{
+  const n = P.score('Experts say it works.');
+  try { assert(n < 80, n); pass++; } catch (e) { fail++; console.log('FAIL short score', n); }
+}
+t('label kept when not restated', '- **Four strengths:** Light, Standard, Aggressive and Max levels.', '- Four strengths: Light, Standard, Aggressive and Max levels.', {}, 3);
+{
+  const f = P.findFlags('You ship. Then another. Then another. Nothing moves.');
+  try { assert(f.some(x => /dramatic fragments/.test(x.label))); pass++; } catch (e) { fail++; console.log('FAIL fragment flag', JSON.stringify(f)); }
+}
 {
   const h = P.highlights('Moreover, we leverage a tool.', 2);
   try { assert(h.some(x => x.label && x.text === 'Moreover, ') && h.map(x => x.text).join('') === 'Moreover, we leverage a tool.'); pass++; } catch (e) { fail++; console.log('FAIL highlights', JSON.stringify(h)); }

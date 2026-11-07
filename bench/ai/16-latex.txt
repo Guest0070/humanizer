@@ -1,0 +1,10 @@
+\section{Introduction}
+
+Graph neural networks (GNNs) have emerged as a powerful paradigm for learning on relational data \cite{kipf2017,velickovic2018}. By leveraging message passing, GNNs aggregate information from neighbouring nodes, thereby capturing both local structure and node features. Formally, the update at layer $\ell$ is given by
+\begin{equation}
+h_v^{(\ell+1)} = \sigma\left(W^{(\ell)} \sum_{u \in \mathcal{N}(v)} h_u^{(\ell)}\right).
+\end{equation}
+
+Notably, despite their success, GNNs suffer from over-smoothing, a phenomenon in which node representations become increasingly indistinguishable as depth increases \cite{li2018}. This limitation underscores the need for architectures that can effectively capture long-range dependencies.
+
+In this paper, we propose a novel framework that seamlessly integrates attention mechanisms with residual connections, enabling deeper models without sacrificing representational capacity. Our contributions are threefold: (i) a new layer design, (ii) a theoretical analysis of its expressivity, and (iii) extensive experiments on 12 benchmark datasets, demonstrating state-of-the-art performance (see Table~\ref{tab:results}).

@@ -1,0 +1,9 @@
+## Install
+
+```bash
+npm install statecraft
+```
+
+Import `createStore`, pass it a reducer, and you have a store. There is no provider to wrap your app in. Components subscribe with `useStore(selector)` and re-render only when the selected slice changes, compared with `Object.is`.
+
+The library is about 2 KB gzipped and has no dependencies. It works with TypeScript; types are inferred from the reducer, so you rarely write them by hand. It does not support middleware yet. If you need logging, wrap the reducer.

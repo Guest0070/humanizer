@@ -1,0 +1,7 @@
+We ran the model with robust standard errors, as the reviewer asked. The coefficient on price fell from 0.42 to 0.31 but stayed significant at the 5% level (Table 3). "The effect is smaller than we thought," Dr Osei said, "but it is real."
+
+Will and Hope Carter run the bakery on Mill Lane. Will bakes; Hope does the books. They have a van, two ovens and a dog called Moreover, which is a joke nobody gets. Their sourdough is not just bread, as Hope puts it, but the reason anyone drives out there.
+
+To install, run `pip install pandas==2.1.4` and set PATH to C:\tools\bin. The config file lives at ~/.config/app/settings.toml. See https://example.com/docs?ref=readme for details, or email help@example.com.
+
+I am who I am. What it is, it is. She asked where they are. The meeting is at 3 p.m., e.g. after lunch. An hour later, an honest answer: a unicorn, a European, an MBA.

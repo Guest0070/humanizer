@@ -1,0 +1,3 @@
+Forecasting stock prices is one of the oldest problems in finance, and it is still unsolved. Traditional statistical models such as ARIMA assume a linear relationship that the data do not follow. The focus later shifted to recurrent networks, and LSTM became the standard choice for price series because it was built to carry information across long sequences.
+
+The reported accuracy is very high. Some papers claim directional accuracy above 90%. But most of these studies test on a single asset over a short window, and few include transaction costs. So a single reported accuracy figure describes one asset in one period, not a method that works in general.

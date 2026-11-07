@@ -92,6 +92,7 @@ textarea::placeholder{color:var(--mute)}
       <button type="button" data-v="direct" aria-pressed="false" title="Cuts intensifiers and softeners">Direct</button>
       <button type="button" data-v="formal" aria-pressed="false" title="Expands contractions, academic habits">Formal</button>
       <button type="button" data-v="technical" aria-pressed="false" title="Like formal, and leaves ambiguous technical words alone">Technical</button>
+      <button type="button" data-v="student" aria-pressed="false" title="Formal but plain: short verbs, full stops over semicolons, But/So/And openers, no contractions">Student</button>
     </div></div>
   <label class="chk"><input type="checkbox" id="contr" checked> Contractions</label>
   <label class="chk"><input type="checkbox" id="live" checked> Live</label>
@@ -203,7 +204,7 @@ function paint() {
   $('out').hidden = tab !== 'text';
   $('diff').hidden = tab !== 'diff';
   $('tells').hidden = tab !== 'tells';
-  $('contr').disabled = voice === 'formal' || voice === 'technical';
+  $('contr').disabled = voice === 'formal' || voice === 'technical' || voice === 'student';
 }
 paint();
 
@@ -259,6 +260,7 @@ function render() {
   const ch = $('changes'); ch.innerHTML = '';
   if (!r.changes.length) li(ch, 'No changes. Text already reads plain.', 'empty');
   r.changes.forEach(c => li(ch, '<span>' + safe(c.label) + '</span><em>' + c.n + '</em>'));
+  if (r.formal) li(ch, 'Academic or formal-letter text: contractions were not added.', 'empty');
 
   const fl = $('flags'); fl.innerHTML = '';
   if (overWordCap) li(fl, '<small>Word growth cap reached. Original kept within ' + wordCap + ' words.</small>', 'flag');
@@ -270,7 +272,7 @@ function render() {
   if (g.bad) li(fl, '<small>Readability dropped (' + g.easeBefore.toFixed(0) + ' to ' + g.easeAfter.toFixed(0) + ', sentence ratio ' + g.ratio.toFixed(2) + '): review the result</small>', 'flag');
   const flags = P.findFlags(r.text);
   if (aiOverride) aiOverride.warnings.forEach(w => li(fl, '<small>AI polish: ' + safe(w) + '</small>', 'flag'));
-  if (!flags.length && !fc.lost.length && !g.bad && !(aiOverride && aiOverride.warnings.length)) li(fl, 'Nothing flagged.', 'empty');
+  if (!overWordCap && !flags.length && !fc.lost.length && !g.bad && !(aiOverride && aiOverride.warnings.length)) li(fl, 'Nothing flagged.', 'empty');
   flags.forEach(f => li(fl, '<small>' + safe(f.label) + '</small><q>' + safe(f.text) + '</q>', 'flag'));
 
   const bk = $('break'); bk.innerHTML = '';

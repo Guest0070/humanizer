@@ -17,6 +17,7 @@ for (let i = 0; i < args.length; i++) {
   else if (a === '-k' || a === '--keep') opt.keep = String(args[++i] || '').split(',').map(s => s.trim()).filter(Boolean);
   else if (a === '-s' || a === '--sample') opt.sample = fs.readFileSync(args[++i], 'utf8');
   else if (a === '--no-contractions') opt.contractions = false;
+  else if (a === '--informal') opt.register = 'informal';
   else if (a === '--no-quote-protection') opt.quotes = false;
   else if (a === '--ai') ai = true;
   else if (a === '--model') model = args[++i];
@@ -26,17 +27,20 @@ for (let i = 0; i < args.length; i++) {
   else if (a === '--json') mode = 'json';
   else if (a === '--diff') mode = 'diff';
   else if (a === '-i' || a === '--in-place') mode = 'inplace';
+  else if (/^-./.test(a)) { console.error('Unknown option ' + a + '. Run with --help to see the options.'); process.exit(2); }
   else files.push(a);
 }
+if (!P.VOICES.includes(opt.voice)) { console.error('Unknown voice "' + opt.voice + '". Use one of: ' + P.VOICES.join(', ') + '.'); process.exit(2); }
 
 if (mode === 'help') {
   console.log(`plainspoken [options] [file ...]   (reads stdin when no file is given)
 
   -l, --level 1|2|3|4      light, standard (default), aggressive, max (rhythm engineering, up to 3 passes)
-  -v, --voice NAME         neutral (default), casual, direct, formal, technical
+  -v, --voice NAME         neutral (default), casual, direct, formal, technical, student
   -k, --keep "a,b"         words that must stay exactly as written
   -s, --sample FILE        a sample of your own writing; the output adapts to its rhythm and habits
       --no-contractions    leave "do not" alone
+      --informal           add contractions even to academic, formal-letter or impersonal text (neutral voice)
       --no-quote-protection  also edit text inside double quotes
       --score              print the 0-100 AI-tell score and verdict only
       --stats              print writing stats before and after
@@ -49,7 +53,10 @@ if (mode === 'help') {
   process.exit(0);
 }
 
-const read = f => f ? fs.readFileSync(f, 'utf8') : fs.readFileSync(0, 'utf8');
+const read = f => {
+  try { return f ? fs.readFileSync(f, 'utf8') : fs.readFileSync(0, 'utf8'); }
+  catch (e) { console.error('Cannot read ' + (f || 'stdin') + ': ' + (e.code === 'ENOENT' ? 'no such file' : e.message)); process.exit(2); }
+};
 const inputs = files.length ? files.map(f => [f, read(f)]) : [[null, read(null)]];
 let exit = 0;
 
@@ -80,7 +87,7 @@ for (const [f, text] of inputs) {
     fl.forEach(x => console.log('  - ' + x.label + ': ' + x.text));
     if (r.tells || fl.length) exit = 1;
   } else if (mode === 'diff') {
-    const ops = P.diff(text, r.text) || [];
+    const ops = P.diff(text.replace(/\r\n?/g, '\n').replace(/\s+$/, ''), r.text) || [];
     console.log(ops.map(o => o.t === '=' ? o.v : o.t === '-' ? '[-' + o.v + '-]' : '{+' + o.v + '+}').join(''));
   } else if (mode === 'json') {
     console.log(JSON.stringify({ file: f, text: r.text, changes: r.changes, flags: P.findFlags(r.text), before: P.metrics(text), after: P.metrics(r.text), facts: P.checkFacts(text, r.text), readability: P.readabilityGuard(text, r.text) }, null, 2));

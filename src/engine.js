@@ -8,7 +8,32 @@
 const up = s => s.charAt(0).toUpperCase() + s.slice(1);
 const low1 = s => s.charAt(0).toLowerCase() + s.slice(1);
 const mc = (src, r) => /^[A-Z]/.test(src) ? up(r) : r;
-const art = w => (/^(?:[aeiou]|hono|hour|heir)/i.test(w) && !/^(?:uni|use|usu|one|eu)/i.test(w)) ? 'an' : 'a';
+const art = w => (/^(?:[aeiou]|hono|hour|heir)/i.test(w) && !/^(?:uni|use|usu|uti|uto|ubi|ura|uri|uro|ure|uku|eu|ewe|one|once)/i.test(w)) ? 'an' : 'a';
+// Words after "and" or "or" in a list, so a trailing "-ing" clause can be told apart from a list item.
+const PLURALISH = w => /^(?:[a-z]+[^s'’]s|[a-z]+ies|people|children|data|media|staff|men|women|police)$/i.test(w) && !/^(?:is|was|has|this|its|his|us|as|thus|plus|across|perhaps|always|less|unless|news|series|analysis|basis|process|access|success|business|class|focus|bonus|status|campus|virus|gas)$/i.test(w);
+// Gerund to the simple form a new sentence needs ("enabling" -> "enables"/"enabled"). Null when unsure.
+const ING = {
+  enabling: ['enables', 'enabled'], ensuring: ['ensures', 'ensured'], allowing: ['allows', 'allowed'], providing: ['provides', 'provided'],
+  offering: ['offers', 'offered'], creating: ['creates', 'created'], delivering: ['delivers', 'delivered'], enhancing: ['improves', 'improved'],
+  improving: ['improves', 'improved'], demonstrating: ['shows', 'showed'], illustrating: ['shows', 'showed'], contributing: ['contributes', 'contributed'],
+  leading: ['leads', 'led'], making: ['makes', 'made'], giving: ['gives', 'gave'], helping: ['helps', 'helped'], reducing: ['reduces', 'reduced'],
+  increasing: ['increases', 'increased'], resulting: ['results', 'resulted'], causing: ['causes', 'caused'], bringing: ['brings', 'brought'],
+  letting: ['lets', 'let'], cutting: ['cuts', 'cut'], raising: ['raises', 'raised'], saving: ['saves', 'saved'], adding: ['adds', 'added'],
+  marking: ['marks', 'marked'], highlighting: ['highlights', 'highlighted'], reflecting: ['reflects', 'reflected'], paving: ['paves', 'paved'],
+  setting: ['sets', 'set'], opening: ['opens', 'opened'], driving: ['drives', 'drove'], shaping: ['shapes', 'shaped'], using: ['uses', 'used'],
+  supporting: ['supports', 'supported'], boosting: ['boosts', 'boosted'], lowering: ['lowers', 'lowered'], producing: ['produces', 'produced'],
+  prompting: ['prompts', 'prompted'], sparking: ['sparks', 'sparked'], fueling: ['fuels', 'fueled'], fuelling: ['fuels', 'fuelled'],
+  generating: ['generates', 'generated'], keeping: ['keeps', 'kept'], requiring: ['requires', 'required'], forcing: ['forces', 'forced'],
+  turning: ['turns', 'turned'], earning: ['earns', 'earned'], putting: ['puts', 'put'], building: ['builds', 'built'], growing: ['grows', 'grew'],
+  inviting: ['invites', 'invited'], immersing: ['immerses', 'immersed'], reinforcing: ['reinforces', 'reinforced'], underscoring: ['shows', 'showed'],
+  emphasizing: ['stresses', 'stressed'], emphasising: ['stresses', 'stressed'], showcasing: ['shows', 'showed'], fostering: ['encourages', 'encouraged'],
+  bolstering: ['strengthens', 'strengthened'], solidifying: ['strengthens', 'strengthened'], cementing: ['strengthens', 'strengthened']
+};
+// Objects so vague that the rider says nothing: ", ensuring success." is cut outright.
+const EMPTY_GAIN = /^\s*(?:(?:a |an |the |more |greater |better |real |lasting |long-term |meaningful |overall |maximum |optimal |continued |sustainable )*(?:success|growth|excellence|efficiency|results|value|impact|engagement|innovation|progress|satisfaction|quality|productivity|outcomes|performance|experience|experiences|seamless experience|peace of mind))\s*$/i;
+// Past tense when the main clause has a past verb and no present one.
+const PAST = /\b(?:was|were|had|did|became|began|led|made|took|gave|grew|brought|built|came|went|saw|found|left|kept|held|won|lost|rose|fell|[a-z]{3,}ed)\b/i;
+const PRESENT = /\b(?:is|are|has|have|does|do|can|will|may|might|must|should|shall|am)\b/i;
 const esc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
 const mean = xs => xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0;
@@ -16,10 +41,10 @@ const stdev = xs => { if (xs.length < 2) return 0; const m = mean(xs); return Ma
 
 const LEAD = '(^|[.!?]["\')\\]]*\\s+|\\n[ \\t]*(?:[-*\u2022][ \\t]+)?)';
 const LEAD_ZH = '(^|[\u3002\uFF01\uFF1F!?]["\u201D\u300D\u300F]?\\s*|\\n[ \\t]*(?:[-*\u2022][ \\t]+)?)';
-const VOICES = ['neutral', 'casual', 'direct', 'formal', 'technical'];
+const VOICES = ['neutral', 'casual', 'direct', 'formal', 'technical', 'student'];
 const WARM = ['neutral', 'casual', 'direct'];         // voices that take contractions
-const STIFF = ['formal', 'technical'];                // voices that expand them
-const NOTECH = ['neutral', 'casual', 'direct', 'formal'];
+const STIFF = ['formal', 'technical', 'student'];     // voices that expand them
+const NOTECH = ['neutral', 'casual', 'direct', 'formal', 'student'];
 
 // Per-run settings the rule callbacks can read.
 let ctx = { splitAt: 32 };
@@ -37,8 +62,10 @@ function swaps(label, level, pairs, o) {
     add(label, level, new RegExp('\\b' + esc(from).replace(/\\ /g, '\\s+') + '\\b', 'gi'), m => mc(m, to), o);
 }
 // Whole standalone sentence removal; the surrounding whitespace is cleaned up afterwards.
+// The sentence start is a lookbehind, so two droppable sentences in a row are both found.
+const LEAD_LB = '(?<=^|[.!?]["\')\\]]*\\s+|\\n[ \\t]*(?:[-*\u2022][ \\t]+)?)';
 function dropSentence(label, level, src, o) {
-  add(label, level, new RegExp(LEAD + '(?:' + src + ')[.!]?(?=\\s|$)', 'gi'), (m, p) => p, o);
+  add(label, level, new RegExp(LEAD_LB + '(?:' + src + ')[.!]?(?=\\s|$)[ \\t]*', 'gim'), () => '', o);
 }
 
 // A gerund that opens a list or sits in an earlier comma slot means the "-ing" clause is a list item.
@@ -48,8 +75,30 @@ function tailOK(str, off) {
   let i = off;
   while (i > 0 && !'.!?\n'.includes(str[i - 1])) i--;
   const seg = str.slice(i, off), body = seg.slice(seg.lastIndexOf(':') + 1);
-  return !(GERUND_LEAD.test(body) || GERUND_ITEM.test(body));
+  // An enumerated list "(i) ..., (ii) ..." is a list, not a clause with a rider.
+  return !(GERUND_LEAD.test(body) || GERUND_ITEM.test(body) || /\((?:i{1,3}|iv|vi{0,3}|[a-h]|\d{1,2})\)/.test(seg));
 }
+function clauseBefore(str, off) {
+  let i = off;
+  while (i > 0 && !'.!?\n'.includes(str[i - 1])) i--;
+  return str.slice(i, off);
+}
+// An "-ing" rider turned into its own sentence: ", enabling X." -> ". This enables X."
+// Returns null when a second gerund in the tail cannot be conjugated safely.
+function riderSentence(g, rest, end, main) {
+  const k = g.toLowerCase(), v = ING[k];
+  if (!v) return null;
+  const past = PAST.test(main) && !PRESENT.test(main) ? 1 : 0;
+  let ok = true;
+  const body = rest.replace(/(,?\s+and\s+|,\s+)([a-z]+ing)\b/g, (m, sep, g2) => {
+    if (!/^(?:during|being|thing|something|nothing|anything|everything|morning|evening|king|ring|spring|string|bring)$/.test(g2) && ING[g2]) return sep + ING[g2][past];
+    if (/^(?:during|being|thing|something|nothing|anything|everything|morning|evening)$/.test(g2) || !/(?:and\s+)$/.test(sep)) return m;
+    ok = false; return m;
+  });
+  return ok ? '. This ' + v[past] + ' ' + body.trim() + end : null;
+}
+// Facts in a tail (numbers, protected spans, names) mean it cannot simply be cut.
+const FACTY = /\d||\s[A-Z][a-z]/;
 
 /* ---------- Pre-pass: debris from chat UIs and hidden characters (runs before protection) ---------- */
 const PRE = [
@@ -65,8 +114,8 @@ function stripPreamble(t) {
   let n = 0;
   const lines = t.split('\n');
   const first = (lines[0] || '').trim();
-  if (lines.length > 1 && first.length < 140 && /^(?:here(?:'s| is)|sure|certainly|of course|okay|alright|below is|this is)\b/i.test(first) &&
-      /\b(?:rewritten|revised|humani[sz]ed|version|rewrite|text|draft|essay|summary|article)\b/i.test(first) && /[:\uFF1A]\s*$/.test(first)) {
+  if (lines.length > 1 && first.length < 160 && /^(?:(?:sure|certainly|of course|absolutely|okay|ok|alright|great|got it)[!,.]?\s*)?(?:here(?:'s| is| are)|sure|certainly|of course|okay|alright|below (?:is|are)|this is|i've (?:written|drafted|rewritten|put together)|i have (?:written|drafted|rewritten))\b/i.test(first) &&
+      /\b(?:rewritten|revised|humani[sz]ed|version|rewrite|text|draft|essay|summary|article|post|blog|email|e-mail|letter|message|story|poem|response|answer|reply|description|bio|caption|outline|guide|paragraph|introduction|overview|explanation|list|report|script|speech|review|proposal|statement|abstract|tweet|thread|copy|cover letter)\b/i.test(first) && /[:\uFF1A]\s*$/.test(first)) {
     lines.shift(); n++;
   }
   let s = lines.join('\n').trim();
@@ -80,12 +129,25 @@ function stripPreamble(t) {
  * ------------------------------------------------------------------ */
 add('Emoji removed', 1, /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B50}\u{2B06}\u{FE0F}\u{200D}]/gu, () => '');
 add('Bold and italic markers removed', 1, /\*\*([^*\n]+?)\*\*|__([^_\n]+?)__/g, (m, a, b) => a || b);
-add('Em dashes replaced with commas', 1, /\s*\u2014\s*|\s+\u2013\s+/g, () => ', ', { opt: 'dashes' });
+// A dash before a new clause ("X \u2014 it's Y") becomes a full stop; a comma there would splice two sentences.
+add('Em dashes replaced', 1, /\s*(?:\u2014|\s\u2013\s|\s--\s)\s*(?=(?:it's|it is|that's|that is|this is|they're|they are|we're|we are|I'm|you're|there's|here's|he's|she's|it was|this was|that was)\b)(\w)/g, (m, c) => '. ' + c.toUpperCase(), { opt: 'dashes' });
+add('Em dashes replaced', 1, /\s*\u2014\s*|\s+\u2013\s+|\s+--\s+/g, () => ', ', { opt: 'dashes' });
 add('Decorative arrows removed from headings', 1, /^(#{1,6}[^\n]*?)\s*(?:\u2192|->|=>)\s*/gm, (m, h) => h + ': ');
 
 add('Chatbot opener removed', 1, new RegExp(LEAD + '(?:Great question|Excellent question|Good question|Certainly|Of course|Sure thing|Absolutely)[!,.]\\s*(\\S)', 'gi'), (m, p, c) => p + c.toUpperCase());
-add('Chatbot lead-in removed', 1, /\b(?:Here is|Here's)\s+(?:an?|the)\s+(?:overview|essay|summary|breakdown|look|rundown|draft|more detailed breakdown)\b[^.!?:\n]*[.:!]\s*/gi, () => '');
-add('Chatbot sign-off removed', 1, /\s*(?:I hope this helps[^.!?\n]*[.!]?|Let me know if[^.!?\n]*[.!?]|Feel free to[^.!?\n]*[.!?]|Would you like me to[^?\n]*\?|Hope this helps[^.!?\n]*[.!]?|Is there anything else[^?\n]*\?|I'd be happy to[^.!?\n]*[.!?]|Happy to help[^.!?\n]*[.!]?|Don't hesitate to[^.!?\n]*[.!?])/gi, () => '');
+add('Chatbot lead-in removed', 1, /\b(?:Here is|Here's)\s+(?:an?|the|your|my)\s+(?:[\w-]+\s+){0,3}?(?:overview|essay|summary|breakdown|look|rundown|draft|post|article|email|letter|version|rewrite|outline|list|answer|response|description|bio|caption|script|speech|story|poem)\b[^.!?:\n]*[.:!]\s*/gi, () => '');
+add('Chatbot sign-off removed', 1, /\s*(?:I hope this helps[^.!?\n]*[.!]?|(?:Please )?let me know if[^.!?\n]*[.!?]|(?:Please )?feel free to[^.!?\n]*[.!?]|Would you like me to[^?\n]*\?|Do you want me to[^?\n]*\?|Shall I[^?\n]*\?|Hope this helps[^.!?\n]*[.!]?|Is there anything else[^?\n]*\?|I'd be happy to[^.!?\n]*[.!?]|Happy to help[^.!?\n]*[.!]?|(?:Please )?(?:do not|don't) hesitate to[^.!?\n]*[.!?]|I'm here to help[^.!?\n]*[.!?]?)/gi, () => '');
+add('Email pleasantry removed', 1, /(^|\n)[ \t]*I hope (?:this|my) (?:email|message|note|letter) finds you well[.!]?[ \t]*/gi, (m, p) => p);
+add('Chatbot sign-off removed', 1, /\s*\bHappy (?:coding|writing|learning|reading|cooking|baking|travels|traveling|travelling|hacking|gardening|studying|exploring)!\s*$/gim, () => '');
+// "Choosing X is a great question, and the answer depends on Y" -> "Choosing X depends on Y".
+add('Chatbot praise of the question removed', 1, /\s+is (?:a|an) (?:great|good|excellent|common|fair|important|interesting) question,?\s+and the answer (?=depends|varies|comes down)/gi, () => ' ');
+dropSentence('Chatbot praise of the question removed', 1, "(?:That|This|What) (?:is|'s) (?:a|an|such a) (?:great|good|excellent|fantastic|interesting|thoughtful) question");
+add('Email pleasantry removed', 1, /\bI hope you(?:'re| are) (?:doing )?well[.!]\s*/g, () => '');
+swaps('Email filler shortened', 1, [
+  ['I wanted to take a moment to', 'I wanted to'], ['I just wanted to take a moment to', 'I wanted to'],
+  ['more than happy to', 'happy to'], ['at your earliest convenience', 'when it suits you'], ['I wanted to reach out to', 'I wanted to'],
+  ['I am reaching out to', 'I am writing to'], ["I'm reaching out to", "I'm writing to"], ['just wanted to', 'wanted to']
+]);
 add('AI self-reference removed', 1, /\bAs an AI(?: language model)?,?[^.!?\n]*[.!?]\s*|\bI'm sorry,? but[^.!?\n]*[.!?]\s*/gi, () => '');
 add('Flattery removed', 1, /\b(?:You're absolutely right|That's an excellent (?:point|question)|What a great (?:point|question)|You raise a (?:great|good|excellent|valid|important) point)[^.!?\n]*[.!?]\s*/gi, () => '');
 add('Knowledge-cutoff hedge removed', 1, /\b(?:(?:While|Although) )?specific details (?:are|remain) (?:limited|scarce|unclear)[^.,\n]*,\s*|\bbased on (?:the )?available information,?\s*|\bas of my (?:last|latest) (?:training )?update,?\s*|\bup to my (?:last|knowledge)[^,.\n]*,\s*/gi, () => '');
@@ -100,40 +162,86 @@ swaps('Filler phrases shortened', 1, [
   ['in order to', 'to'], ['due to the fact that', 'because'], ['owing to the fact that', 'because'], ['in light of the fact that', 'because'],
   ['at this point in time', 'now'], ['at the present time', 'now'], ['in the event that', 'if'],
   ['has the ability to', 'can'], ['have the ability to', 'can'], ['is able to', 'can'], ['are able to', 'can'],
-  ['a wide range of', 'many'], ['a wide variety of', 'many'], ['a diverse array of', 'many'],
   ['for the purpose of', 'for'], ['with regard to', 'about'], ['in the context of', 'in'],
   ['prior to', 'before'], ['subsequent to', 'after'], ['in spite of the fact that', 'although'],
   ['first and foremost', 'first'], ['last but not least', 'finally'], ['the fact of the matter is', 'the fact is']
 ]);
+// "A wide range of X" becomes "many X" only when X is plural; "a wealth of talent" becomes "a lot of talent".
+add('Filler phrases shortened', 1, /\b(?:a|an)\s+(?:(?:wide|diverse|broad|vast|whole|huge|rich)\s+(range|variety|array|spectrum|selection)|(plethora|myriad|multitude|wealth|treasure trove|host|slew))\s+of\s+/gi, (...a) => {
+  const m = a[0], off = a[a.length - 2], str = a[a.length - 1];
+  const next = (str.slice(off + m.length).match(/^[\w'-]+(?:\s+[\w'-]+){0,2}/) || [''])[0].split(/\s+/);
+  for (const w of next) {
+    if (/^(?:of|about|from|for|in|on|at|to|with|and|or|that|which|by|as|across|around)$/i.test(w)) break;
+    if (PLURALISH(w)) return mc(m, 'many ');
+  }
+  return a[1] ? mc(m, 'a range of ') : mc(m, 'a lot of ');
+});
 add('Throat-clearing removed', 1, new RegExp(LEAD + "(?:It is|It's) (?:important|worth noting|worth mentioning|crucial|essential) (?:to note )?(?:that )?\\s*(\\S)", 'gi'), (m, p, c) => p + c.toUpperCase());
 add('Throat-clearing removed', 1, new RegExp(LEAD + '(?:It should be noted|Needless to say|It goes without saying)(?: that)?,?\\s*(\\S)', 'gi'), (m, p, c) => p + c.toUpperCase());
-add('Throat-clearing removed', 1, /\b(?:it is|it's) (?:important|worth noting|worth mentioning|crucial|essential) (?:to note )?that\s*/gi, () => '');
+add('Throat-clearing removed', 1, /\b(?:it is|it's) (?:important|worth noting|worth mentioning|crucial|essential|vital|key) (?:to (?:note|remember|recognize|recognise|understand|keep in mind|consider|acknowledge|mention|emphasize|emphasise|highlight|point out|stress) )?that\s*/gi, () => '');
+add('Throat-clearing removed', 1, new RegExp(LEAD + "(?:It is|It's) (?:important|crucial|essential|vital|key) to (?:remember|recognize|recognise|understand|keep in mind|consider|acknowledge|emphasize|emphasise|highlight|point out|stress) that\\s*(\\S)", 'gi'), (m, p, c) => p + c.toUpperCase());
 
 /* ------------------------------------------------------------------ *
  * Level 2: structure, vocabulary, puffery
  * ------------------------------------------------------------------ */
-add('Title-case headings lowered to sentence case', 2, /^(#{1,6}\s+)(.+)$/gm, (m, h, txt) => {
+// Words written with a capital in the middle of a body sentence are names, so a heading keeps their capital.
+function namesIn(str) {
+  const s = new Set();
+  for (const line of str.split('\n')) {
+    // Headings and title-case label lines are what is being fixed, so they are not evidence.
+    if (/^\s*#/.test(line) || line.split(/\s+/).filter(x => x.replace(/\W/g, '').length > 3).every(x => /^[^a-z]*[A-Z]/.test(x))) continue;
+    for (const m of line.matchAll(/(?<=[a-z,;:]\s|\(|\b(?:of|the|in|at|by|for|and|with|from|to) )([A-Z][\w'-]*)/g)) s.add(m[1].replace(/'s$/, ''));
+  }
+  return s;
+}
+add('Title-case headings lowered to sentence case', 2, /^(#{1,6}\s+)(.+)$/gm, (m, h, txt, off, str) => {
   const w = txt.split(' ');
-  if (w.length < 3) return m;
-  const long = w.filter(x => x.length > 3);
-  if (!long.length || !long.every(x => /^[A-Z]/.test(x))) return m;
-  return h + w.map((x, i) => i && /^[A-Z][a-z]+$/.test(x) ? x.toLowerCase() : x).join(' ');
+  if (w.length < 2) return m;
+  const long = w.filter(x => x.replace(/\W/g, '').length > 3);
+  if (!long.length || !long.every(x => /^[^a-z]*[A-Z]/.test(x))) return m;
+  const names = namesIn(str);
+  // "1. Prioritize Your Tasks" keeps "Prioritize"; "5 Proven Strategies" is a sentence that starts with a number.
+  const first = /^\d+$/.test(w[0]) ? 0 : w.findIndex(x => /[A-Za-z]/.test(x));
+  return h + w.map((x, i) => i > first && x !== 'I' && /^[A-Z][a-z]*(?:-[A-Z][a-z]*)*[:,]?$/.test(x) && !names.has(x.replace(/[:,]$/, '')) ? x.toLowerCase() : x).join(' ');
 });
 add('Sentence that only restates its heading removed', 2, /^(#{1,6}\s+(.+)\n\n)([^#\-*\d>\n][^\n]{2,200}?[.!?])(?=\n\n)/gm, (m, h, title, s) => {
   const words = x => (x.toLowerCase().match(/[a-z]{4,}/g) || []);
   const t = words(title), body = new Set(words(s));
   const wc = s.trim().split(/\s+/).length;
-  return t.length && t.every(w => body.has(w)) && wc <= t.length + 8 || wc <= 4 ? h : m;
+  return t.length && t.every(w => body.has(w)) && wc <= t.length + 8 ? h : m;
 });
 
-add('Generic upbeat closer removed', 2, /[^.!?\n]*\b(?:future looks bright|exciting times (?:lie|are) ahead|step in the right direction|journey (?:toward|towards) (?:excellence|success)|possibilities are endless|only time will tell|the sky's the limit|watch this space|remains to be seen)\b[^.!?\n]*[.!?]\s*/gi, () => '');
-dropSentence('One-line closer removed', 2, "That(?:'s| is) (?:the )?(?:real |whole )?(?:win|point|key|takeaway|difference|magic|beauty|catch)|That (?:distinction|difference|part|shift) matters|Read that again|Let that sink in|Full stop|Simple as that|It really is that simple|And that changes everything|That's it. That's the (?:whole )?(?:thing|point)");
-leadDrop('Staged run-up removed', 2, "Honestly[,?:]|Here's the thing[,:]?|The thing is,|Let's be honest,?|Real talk[,:]?|Look,|To be clear,|Don't get me wrong,?|Make no mistake,?|Heads up[,:]?|Quick note[,:]?|I'm not saying [^,.]{2,60}, but|The reality is(?: that)?,?");
+add('Generic upbeat closer removed', 2, /[^.!?\n]*\b(?:future(?: of [\w -]{1,40}?)? (?:looks|is looking) (?:bright|promising)|exciting times (?:lie|are) ahead|step in the right direction|journey (?:toward|towards) (?:excellence|success)|possibilities are (?:endless|limitless)|only time will tell|the sky's the limit|watch this space|remains to be seen|the best is yet to come|stay tuned for more|here's to (?:the future|new beginnings|what's next)|as (?:technology|the (?:field|industry|world)) continues to (?:evolve|advance|grow), (?:we|one) can (?:expect|anticipate))\b[^.!?\n]*[.!?]\s*/gi, () => '');
+leadDrop('Staged question removed', 2, "(?:The|My|One|Your) (?:key |main |big |real |final )?(?:takeaway|result|bottom line|catch|kicker|answer|verdict|lesson|best part|twist|upshot|secret)\\?|So,? what does (?:this|that|it) mean(?: for [\\w ]{1,25})?\\?|Why does (?:this|that|it) matter\\?|What's the catch\\?|The good news\\?|Sound familiar\\?|Want to know the best part\\?");
+dropSentence('One-line closer removed', 2, "That(?:'s| is) (?:the )?(?:real |whole )?(?:win|point|key|takeaway|difference|magic|beauty|catch)|That (?:distinction|difference|part|shift) matters|Read that again|Let that sink in|That's the (?:real |whole |big |hard |only )?(?:lesson|secret|trick|truth|story|problem|answer|game)|Here's what I mean|Full stop|Simple as that|It really is that simple|And that changes everything|That's it. That's the (?:whole )?(?:thing|point)");
+leadDrop('Staged run-up removed', 2, "Here's why(?: (?:this|that|it) matters)?[.:]|Here's the kicker[,:]?|But here's the kicker[,:]?|Picture this[,:]|Imagine this[,:]|Spoiler alert[,:]|The answer is simple[.:]|The short answer[,:]?|Long story short[,:]|As (?:mentioned|noted|discussed|we've seen|we have seen) (?:earlier|above|before|previously),|Honestly[,?:]|Here's the thing[,:]?|The thing is,|Let's be honest,?|Real talk[,:]?|Look,|To be clear,|Don't get me wrong,?|Make no mistake,?|Heads up[,:]?|Quick note[,:]?|I'm not saying [^,.]{2,60}, but|The reality is(?: that)?,?");
 
-add('Negative parallelism simplified', 2, /\b(It's|It is|This is|That's|That is)\s+not\s+(?:just|merely|only|simply|about)\s+[^;.!?,]*[;,]\s*(?:it's|it is|but)\s+([^.!?]*[.!?])/gi, (m, a, b) => a + ' ' + b);
+add('Negative parallelism simplified', 2, /\b(It's|It is|This is|That's|That is)\s+not\s+(?:just|merely|only|simply|about)\s+[^;.!?,\n]*[;,.]\s*(?:it's|it is|but)\s+(?!not\b|also\b)([^.!?\n]*[.!?])/gi, (m, a, b) => a + ' ' + b);
+// "The X isn't just a Y, it's a Z." -> "The X is a Z." (the em-dash form arrives here as a full stop or comma).
+add('Negative parallelism simplified', 2, /\b(is|are|was|were)(?:n't| not)\s+(?:just|merely|only|simply)\s+(?:an?\s+|the\s+)?[^;.!?,\n]{1,50}?[;,.]\s+(?:it's|it is|they're|they are|it was|they were|but)\s+(?!not\b|also\b)([^.!?\n]*[.!?])/gi, (m, v, b) => v + ' ' + b);
+add('Negative parallelism simplified', 2, /\b(is|are)\s+no longer\s+(?:just\s+)?((?:an?\s+|the\s+)?[^;.!?,\n]{1,40}?)[;,.]\s+(?:it's|it is|they're|they are)\s+(?!not\b|also\b)([^.!?\n]*[.!?])/gi, (m, v, x, b) => v + ' now ' + b.replace(/[.!?]$/, '') + ', not ' + x + m.slice(-1));
+// Split contrast over two sentences: "The fix isn't more meetings. It's fewer priorities." -> "The fix is fewer priorities."
+add('Split contrast stated directly', 2, new RegExp(LEAD + "((?:The|Our|Your|My|This|That|It)\\b[\\w' -]{0,30}?|[A-Z][a-z]+) (is|are|was|were)(?:n't| not) (?!only\\b|just\\b|always\\b)([^.!?\\n]{2,60})\\. (?:It's|It is|They're|They are|It was|They were) (?!not\\b|also\\b)([^.!?\\n]{2,80}[.!?])", 'g'), (m, p, subj, v, a, b) => {
+  // Only a true swap of like for like ("about hacks" / "about people", "more meetings" / "fewer priorities").
+  // "Paris isn't cheap. It's still worth it." makes two claims and stays.
+  const kind = x => (x.match(/^(about|a|an|the|more|fewer|less|your|our|their|my|his|her|its|some|any|one|two|three)\b/i) || [])[0] || (/^[a-z]+ing\b/i.test(x) ? 'ing' : '');
+  const ka = kind(a).toLowerCase(), kb = kind(b).toLowerCase();
+  const same = ka && kb && (ka === kb || /^(?:a|an|the|your|our|their|my|his|her|its|some|any|one|two|three|more|fewer|less)$/.test(ka) && /^(?:a|an|the|your|our|their|my|his|her|its|some|any|one|two|three|more|fewer|less)$/.test(kb));
+  return same ? p + subj + ' ' + v + ' ' + b : m;
+});
 add('Subjectless fragment rewritten', 2, /(^|[.!?]\s+)No ([a-z][a-z ]{1,40}?) (?:needed|required)\./gi, (m, p, x) => p + 'You do not need ' + x + '.');
+// "This shift not only altered A but also gave rise to B" -> "This shift altered A and gave rise to B".
+// The inverted form ("Not only did it...") needs a rewrite, so it is left to the flag.
+add('"Not only... but also" simplified', 2, /\bnot only\s+(?!(?:did|does|do|is|was|are|were|has|have|had|can|could|will|would|that|because)\b)([^.!?;:\n]{3,90}?),?\s+but(?:\s+(?:it|they|he|she|we|you|I))?\s+also\s+/g, (m, a) => a + ' and ');
 
-add('Fake-depth "-ing" tails cut', 2, /,\s+(?:thereby |thus )?(?:highlighting|underscoring|emphasi[sz]ing|showcasing|reflecting|symboli[sz]ing|fostering|cultivating|contributing to|marking|solidifying|cementing|paving the way|setting the stage|resonating|bolstering|shaping the)\b[^.!?;\n]*([.!?])/gi, (m, e, off, str) => tailOK(str, off) ? e : m);
+// Commentary riders are cut. A rider that carries a number, a name or a citation becomes its own sentence instead.
+add('Fake-depth "-ing" tails cut', 2, /,\s+(?:thereby |thus )?(highlighting|underscoring|emphasi[sz]ing|showcasing|reflecting|symboli[sz]ing|fostering|cultivating|contributing to|marking|solidifying|cementing|paving the way|setting the stage|resonating|bolstering|shaping the|serving as an? (?:reminder|testament|symbol|example)|adding (?:depth|layers?|nuance|richness|texture|complexity|a layer)|inviting (?:readers|viewers|audiences|the reader|the viewer|us|you)|immersing (?:readers|viewers|audiences|the reader|the viewer|us|you)|reinforcing|signal(?:l)?ing)\b([^.!?;\n]*)([.!?])/gi, (m, g, rest, e, off, str) => {
+  if (!tailOK(str, off)) return m;
+  if (!FACTY.test(rest)) return e;
+  const head = g.split(' ')[0].toLowerCase();
+  const tail = g.slice(head.length) + rest;
+  return riderSentence(head, tail, e, clauseBefore(str, off)) || m;
+});
 
 swaps('Puffed-up phrases simplified', 2, [
   ['stands as a testament to', 'shows'], ['serves as a testament to', 'shows'], ['is a testament to', 'shows'], ['are a testament to', 'show'],
@@ -146,16 +254,32 @@ swaps('Puffed-up phrases simplified', 2, [
   ['in the realm of', 'in'], ['nestled in the heart of', 'in'], ['in the heart of', 'in'],
   ['nestled within', 'within'], ['nestled between', 'between'], ['nestled among', 'among'], ['nestled in', 'in'], ['nestled at', 'at'],
   ['plethora of', 'lot of'], ['myriad of', 'many'], ['evolving landscape', 'field'], ['a rich cultural heritage', 'a cultural heritage'],
-  ['complex and multifaceted', 'complex'], ['deep dive', 'close look'], ['valuable insights', 'useful findings'], ['embark on', 'start'],
-  ['paves the way for', 'leads to'], ['paved the way for', 'led to'], ['paving the way for', 'leading to'], ['pave the way for', 'lead to'],
+  ['complex and multifaceted', 'complex'], ['deep dive', 'close look'], ['valuable insights', 'insights'], ['valuable insight', 'insight'], ['embark on', 'start'],
+  ['paves the way for', 'opens the way to'], ['paved the way for', 'opened the way to'], ['paving the way for', 'opening the way to'], ['pave the way for', 'open the way to'],
   ['at the forefront of', 'leading'], ['harnessing the power of', 'using'], ['harnesses the power of', 'uses'], ['harness the power of', 'use'],
   ['fosters a culture of', 'builds a culture of'], ['foster a culture of', 'build a culture of'],
   ['unlock the full potential of', 'get the most from'], ['unlocking the potential of', 'getting more from'], ['unlock the potential of', 'get more from'],
   ['key takeaways', 'main points'], ['key takeaway', 'main point'], ['pain points', 'problems'], ['pain point', 'problem'],
   ['low-hanging fruit', 'easy wins'], ['paradigm shift', 'major change'], ['circle back', 'return'], ['touch base', 'check in'],
   ['tip of the iceberg', 'a small part'], ['the dawn of', 'the start of'], ['value proposition', 'benefit'], ['thought leadership', 'expertise'],
-  ['thought leader', 'expert']
+  ['thought leader', 'expert'], ['a myriad', 'many'], ['has emerged as', 'has become'], ['have emerged as', 'have become'],
+  ['emerged as a', 'became a'], ['emerged as an', 'became an'], ['emerging as', 'becoming'],
+  ['sheds light on', 'explains'], ['shedding light on', 'explaining'], ['to shed light on', 'to explain'],
+  ['masterfully weaves together', 'combines'], ['masterfully weaves', 'combines'], ['weaves together', 'combines'], ['seamlessly weaves', 'combines'],
+  ['paints a vivid picture of', 'describes'], ['paint a vivid picture of', 'describe'], ['painting a vivid picture of', 'describing'],
+  ['resonates on a profound level', 'resonates'], ['resonates on a deep level', 'resonates'], ['on a profound level', 'deeply'],
+  ['a game-changer', 'a big change'], ['a game changer', 'a big change'], ['game-changers', 'big changes'],
+  ['take it to the next level', 'improve it'], ['stay ahead of the curve', 'stay ahead'], ['every step of the way', 'throughout'],
+  ['in the grand scheme of things', 'overall'], ['for generations to come', ''], ['nothing short of', ''],
+  ['that will leave you speechless', ''], ['that will take your breath away', ''], ['that will leave you breathless', '']
 ]);
+add('"Next level" simplified', 2, /\b(take|takes|taking|took)\s+(your|their|our|its|his|her|my|the)\s+([\w-]+(?:\s+[\w-]+)?)\s+to the next level\b/gi, (m, v, p, x) => mc(v, ({ take: 'improve', takes: 'improves', taking: 'improving', took: 'improved' })[v.toLowerCase()]) + ' ' + p + ' ' + x);
+dropSentence('Motivational closer removed', 2, "(?:Remember,? )?[\\w ]{2,30} is a (?:journey|marathon|process), not a (?:destination|sprint|race)|Start small, stay consistent[^.!?\\n]*|The (?:choice|ball) is (?:yours|in your court)|You've got this|The rest is history");
+add('"Unlock potential" simplified', 2, /\bunlock(s|ed|ing)?\s+(their|its|your|our|his|her|my)\s+(?:full\s+|true\s+)?potential\b/gi, (m, s, p) => mc(m, 'reach' + (({ s: 'es', ed: 'ed', ing: 'ing' })[(s || '').toLowerCase()] || '')) + ' ' + p + ' full potential');
+add('Noun-only hype replaced', 2, /\b(a|an)\s+must-(read|see|visit|have|try|watch|listen)\b(?=\s*(?:[.!?,;:]|for\b|if\b|$))/gi, (m, a, v) => mc(a, 'worth ' + ({ read: 'reading', see: 'seeing', visit: 'visiting', have: 'having', try: 'trying', watch: 'watching', listen: 'hearing' })[v.toLowerCase()]));
+add('Stock "no wonder" opener removed', 2, new RegExp(LEAD + "it(?:'s| is) no (?:wonder|surprise|secret) (?:that |why )?\\s*(\\S)", 'gi'), (m, p, c) => p + c.toUpperCase());
+add('Stock "no wonder" opener removed', 2, /,\s+it(?:'s| is) no (?:wonder|surprise|secret) (?:that |why )?/gi, () => ', ');
+leadDrop('Stock opener dropped', 2, "Rest assured,|Look no further[.!]|Without a doubt,|There's no denying (?:that )?|In this day and age,|It's no exaggeration to say (?:that )?");
 
 const conj = (from, to) => from.map((f, i) => [f, to[i]]);
 const STOCK = [].concat(
@@ -178,7 +302,7 @@ const STOCK = [].concat(
   conj(['fosters', 'fostered', 'fostering', 'foster'], ['encourages', 'encouraged', 'encouraging', 'encourage']),
   conj(['bolsters', 'bolstered', 'bolstering', 'bolster'], ['strengthens', 'strengthened', 'strengthening', 'strengthen']),
   conj(['showcases', 'showcased', 'showcasing', 'showcase'], ['shows', 'showed', 'showing', 'show']),
-  conj(['garners', 'garnered', 'garnering', 'garner'], ['gets', 'got', 'getting', 'get']),
+  conj(['garners', 'garnered', 'garnering', 'garner'], ['attracts', 'attracted', 'attracting', 'attract']),
   conj(['underscores', 'underscored', 'underscoring', 'underscore'], ['shows', 'showed', 'showing', 'show']),
   conj(['reimagines', 'reimagined', 'reimagining', 'reimagine'], ['rethinks', 'rethought', 'rethinking', 'rethink']),
   conj(['catalyzes', 'catalyzed', 'catalyzing', 'catalyze'], ['starts', 'started', 'starting', 'start']),
@@ -191,7 +315,7 @@ const STOCK = [].concat(
   [['align with best practices', 'follow best practices'], ['aligns with', 'matches'], ['aligned with', 'matched'], ['align with', 'match']],
   [['cornerstone', 'foundation'], ['overarching', 'main'], ['burgeoning', 'growing'], ['nascent', 'early'], ['quintessential', 'typical'],
    ['ubiquitous', 'common'], ['bustling', 'busy'], ['daunting', 'hard'], ['actionable', 'practical'], ['impactful', 'effective'],
-   ['learnings', 'lessons'], ['holistically', 'completely'], ['holistic', 'complete'], ['complexities', 'details'], ['paradigm', 'model']],
+   ['learnings', 'lessons'], ['holistically', 'completely'], ['holistic', 'complete'], ['complexities', 'details'], ['paradigm', 'approach']],
   [['interplay', 'interaction'], ['numerous', 'many'], ['endeavors', 'efforts'], ['unwavering', 'steady'], ['commitment to excellence', 'care']]
 );
 swaps('Stock AI vocabulary replaced', 2, STOCK.filter(p => !['comprehensive', 'paradigm', 'complexities', 'multifaceted', 'holistic'].includes(p[0])), { skipVoices: [] });
@@ -202,19 +326,23 @@ add('"Serves as" and friends replaced with "is"', 2, /\b(?:serves|stands|functio
 add('"Serves as" and friends replaced with "is"', 2, /\b(?:serve|stand|function) as\b/gi, m => mc(m, 'are'));
 add('"Boasts" replaced with "has"', 2, /\bboasts\b/gi, m => mc(m, 'has'));
 
-const PROMO_CORE = 'vibrant|breathtaking|stunning|groundbreaking|seamlessly|seamless|game-changing|game-changer|transformative|unparalleled|world-class|cutting-edge|future-ready|ever-evolving|ever-changing|rapidly evolving|fast-paced|renowned|must-visit';
-const PROMO_AMBIGUOUS = 'robust|holistic';   // real technical uses exist, so the technical voice keeps them
+const PROMO_CORE = 'vibrant|breathtaking|stunning|groundbreaking|seamlessly|seamless|game-changing|transformative|unparalleled|world-class|cutting-edge|future-ready|ever-evolving|ever-changing|rapidly evolving|fast-paced|renowned|must-visit|must-have|must-see|captivating|enchanting|awe-inspiring|unrivall?ed|best-in-class|next-level|top-notch|second-to-none';
+const PROMO_AMBIGUOUS = 'robust(?!\\s+(?:standard|regression|estimat|statistic|to\\b|against|optimi|control|design|covariance|variance|inference|tests?\\b|checks?\\b|methods?\\b|PCA|loss|fit|errors))|holistic';   // real technical uses exist, so the technical voice keeps them
+// An adjective is dropped only where it modifies the next word; "the view is stunning and..." keeps it.
+const NOUNISH = '(?!(?:and|or|but|nor|for|to|of|in|on|at|by|with|from|as|than|that|which|who|when|while|if|because|so|is|are|was|were|be|been|it|this|these|those|its|their|they|you|we|I|the|a|an|my|your|our|his|her|too|enough|here|there|now|then|yet|still|again|indeed|overall)\\b)(?=[A-Za-z])';
 for (const [PROMO, o] of [[PROMO_CORE, undefined], [PROMO_AMBIGUOUS, { voices: NOTECH }]]) {
   add('Promotional adjectives dropped', 2, new RegExp('\\b(?:' + PROMO + '),\\s+(\\w+),\\s+and\\s+(\\w+)', 'gi'), (m, a, b) => a + ' and ' + b, o);
-  add('Promotional adjectives dropped', 2, new RegExp('\\b(a|an)\\s+(?:' + PROMO + '),?\\s+(\\w+)', 'gi'), (m, a, n) => mc(a, art(n)) + ' ' + n, o);
-  add('Promotional adjectives dropped', 2, new RegExp(LEAD + '(?:' + PROMO + '),?\\s+(\\w)', 'gi'), (m, p, c) => p + c.toUpperCase(), o);
-  add('Promotional adjectives dropped', 2, new RegExp('\\b(?:' + PROMO + '),?\\s+', 'gi'), () => '', o);
+  add('Promotional adjectives dropped', 2, new RegExp('\\b(a|an)\\s+(?:' + PROMO + ')(?:,\\s+|\\s+and\\s+|\\s+)' + NOUNISH + '([\\w-]+)', 'gi'), (m, a, n) => mc(a, art(n)) + ' ' + n, o);
+  add('Promotional adjectives dropped', 2, new RegExp(LEAD + '(?:' + PROMO + ')(?:,\\s+|\\s+and\\s+|\\s+)' + NOUNISH + '(\\w)', 'gi'), (m, p, c) => p + c.toUpperCase(), o);
+  add('Promotional adjectives dropped', 2, new RegExp('\\b(?:' + PROMO + ')(?:,\\s+|\\s+and\\s+(?=[\\w-]+\\s+[a-z]))?\\s*' + NOUNISH, 'gi'), () => '', o);
 }
 
 leadDrop('Empty transition dropped', 2, 'Additionally,|Moreover,|Furthermore,|In addition,|Besides that,|Importantly,|Notably,|Interestingly,|Crucially,|That being said,|With that said,|That said,|Moving forward,|Going forward,');
 leadDrop('Summary opener dropped', 2, 'In conclusion,|In summary,|To sum up,|Overall,|Ultimately,|All in all,|In essence,|In a nutshell,|To summarize,|To conclude,');
 leadDrop('Authority trope dropped', 2, 'At its core,|At the end of the day,|In reality,|Fundamentally,|Essentially,|Basically,|Actually,|The truth is,|Simply put,|Put simply,');
 add('"Consequently" simplified', 2, /\bConsequently,/g, () => 'So,');
+add('"Firstly" made "First"', 2, new RegExp(LEAD + '(First|Second|Third|Fourth)ly,', 'g'), (m, p, w) => p + w + ',', { tell: false });
+add('"Truly" cut', 3, /\btruly\s+(?=[a-z]{3,}\b)(?!(?:is|are|was|were|be|believe|mean|want|need)\b)/gi, () => '', { voices: ['neutral', 'direct', 'formal', 'technical', 'student'] });
 add('Authority trope trimmed', 2, /\bThe real (question|issue|problem|challenge) is\b/g, (m, w) => 'The ' + w + ' is');
 add('Authority trope trimmed', 2, /\bwhat really matters is\b/gi, m => mc(m, 'what matters is'));
 add('Stacked hedge trimmed', 2, /\b(could|might|may|can) (?:potentially|possibly|conceivably|arguably)\b/gi, (m, v) => v);
@@ -243,12 +371,44 @@ add('Intensifiers cut (direct)', 2, /\b(?:very|really|extremely|incredibly|highl
 add('"Linked to" made "associated with" (formal)', 2, /\blinked to\b/gi, m => mc(m, 'associated with'), { voices: STIFF });
 add('"Via" made "through" (formal)', 2, /\bvia\b/gi, m => mc(m, 'through'), { voices: ['formal'] });
 
+// Voice: student (third-year register: plain Latinate-to-short vocabulary, full stops over semicolons, no slang, no contractions)
+swaps('Plainer word (student)', 2, [
+  ['utilise', 'use'], ['utilize', 'use'], ['subsequently', 'later'], ['commenced', 'began'], ['demonstrate', 'show'], ['demonstrates', 'shows'],
+  ['demonstrated', 'showed'], ['numerous', 'many'], ['obtain', 'get'], ['obtained', 'got'], ['sufficient', 'enough'], ['approximately', 'about'],
+  ['undercuts', 'weakens'], ['undermines', 'weakens'], ['classical', 'traditional'], ['facilitate', 'help'], ['facilitates', 'helps'],
+  ['endeavour', 'try'], ['endeavor', 'try'], ['ascertain', 'find out'], ['in order to', 'to'], ['prior to', 'before'], ['commence', 'begin'],
+  ['provenance', 'source'], ['scrutiny', 'checking']
+], { voices: ['student'] });
+add('Semicolon made a full stop (student)', 2, /;\s+([a-z])/g, (m, c) => '. ' + c.toUpperCase(), { voices: ['student'], tell: false });
+add('"Furthermore" opener made "And" (student)', 2, new RegExp(LEAD + '(?:Furthermore|Moreover|Additionally),\\s*(\\S)', 'g'), (m, p, c) => p + 'And ' + c, { voices: ['student'] });
+add('"However" opener made "But" (student)', 2, new RegExp(LEAD + 'However,\\s*(\\S)', 'g'), (m, p, c) => p + 'But ' + c, { voices: ['student'] });
+add('"Therefore" opener made "So" (student)', 2, new RegExp(LEAD + '(?:Therefore|Thus|Hence|Consequently),\\s*(\\S)', 'g'), (m, p, c) => p + 'So ' + c, { voices: ['student'] });
 /* ------------------------------------------------------------------ *
  * Level 3: aggressive
  * ------------------------------------------------------------------ */
-add('Deeper "-ing" tails cut', 3, /,\s+(?:ensuring|demonstrating|illustrating|enabling|allowing|providing|offering|creating|delivering|enhancing|improving)\b[^.!?;\n]*([.!?])/gi, (m, e, off, str) => tailOK(str, off) ? e : m);
+// These riders usually carry a real claim, so they become their own sentence; only a short empty one is cut.
+add('Deeper "-ing" tails made a sentence', 3, /,\s+(?:thereby |thus )?(ensuring|demonstrating|illustrating|enabling|allowing|providing|offering|creating|delivering|enhancing|improving|making|leading to|resulting in|helping)\b([^.!?;\n]*)([.!?])/gi, (m, g, rest, e, off, str) => {
+  if (!tailOK(str, off)) return m;
+  const main = clauseBefore(str, off);
+  if (EMPTY_GAIN.test(rest)) return e;
+  if ((main.match(/\S+/g) || []).length < 4) return m;
+  const head = g.split(' ')[0].toLowerCase();
+  return riderSentence(head, g.slice(head.length) + rest, e, main) || m;
+});
 add('Hollow intensifier phrases cut', 3, /\b(?:quite frankly|to be honest|to be frank|let's be clear)\b,?\s*/gi, () => '', { voices: ['neutral', 'direct', 'formal', 'technical'] });
-add('List labels folded into the sentence', 3, /^(\s*[-*\u2022]\s+)[^:\n]{2,30}:\s+([A-Z][^\n]{25,})$/gm, (m, b, s) => b + s);
+// "Whether you're a busy professional or a weekend barista, this machine..." -> "This machine...".
+add('Brochure "whether you\'re" opener removed', 3, new RegExp(LEAD + "Whether you(?:'re| are) (?:an? )?[^,.;\\n]{2,50}? or (?:an? |just |simply )?[^,.;\\n]{2,50}?,\\s*(\\S)", 'g'), (m, p, c) => p + c.toUpperCase());
+add('Title-case label lowered', 3, /^([A-Z][a-z]+(?: (?:[A-Z][a-z]+|of|and|the|for|to|in|a)){1,4}):[ \t]*$/gm, (m, label, off, str) => {
+  if (/^(?:Subject|From|To|Re|Date|Cc|Bcc)\b/.test(label)) return m;
+  const names = namesIn(str);
+  return label.split(' ').map((x, i) => i && x !== 'I' && /^[A-Z][a-z]+$/.test(x) && !names.has(x) ? x.toLowerCase() : x).join(' ') + ':';
+}, { tell: false });
+// Only a label the sentence already restates is folded away; "Four strengths: Light, Standard..." keeps its label.
+add('List labels folded into the sentence', 3, /^(\s*[-*\u2022]\s+)([^:\n]{2,30}):\s+([A-Z][^\n]{25,})$/gm, (m, b, label, s) => {
+  const words = (label.toLowerCase().match(/[a-z]{4,}/g) || []).map(w => w.slice(0, 5));
+  const body = s.toLowerCase();
+  return words.length && words.filter(w => body.includes(w)).length / words.length >= 0.5 ? b + s : m;
+});
 add('Thematic breaks removed', 3, /\n\n(?:---|\*\*\*|___)\n\n/g, () => '\n\n');
 add('Long sentences split', 3, /[^.!?\n]+[.!?]/g, s => {
   const n = s.trim().split(/\s+/).length;
@@ -271,10 +431,16 @@ const CONTR = [
   ['they are', "they're"], ['we are', "we're"], ['you are', "you're"], ['I am', "I'm"], ['I have', "I've"],
   ['we have', "we've"], ['you have', "you've"], ['they have', "they've"]
 ];
-for (const [from, to] of CONTR)
-  add('Contractions added', 2, new RegExp('\\b' + from.replace(' ', '\\s+') + '\\b(?![.,;!?])', 'g'), m => mc(m, to), { opt: 'contractions', tell: false, voices: WARM });
+// No contraction where the verb is stressed: "who I am today", "what it is", "as they are".
+const NO_CONTR_BEFORE = '(?<!\\b(?:who|what|where|how|whatever|wherever|whoever|than|as|yes|no)\\s+)';
+// "Have" contracts only as a helper verb ("we've seen"), never as "possess" ("you've a store").
+const AUX_HAVE = '(?=\\s+(?:been|got|gotten|done|made|seen|had|taken|given|written|known|shown|chosen|driven|eaten|fallen|forgotten|hidden|spoken|broken|proven|grown|thrown|drawn|built|found|put|set|run|read|heard|felt|met|paid|sold|held|kept|left|lost|brought|bought|thought|taught|caught|sent|spent|won|led|said|told|become|come|gone|begun|already|just|never|always|also|recently|finally|since|ever|long|now|still|only|both|all|each|to|[a-z]{2,}ed)\\b)';
+for (const [from, to] of CONTR) {
+  const have = /\bha(?:ve|s)\b/.test(from);
+  add('Contractions added', 2, new RegExp(NO_CONTR_BEFORE + '\\b' + from.replace(' ', '\\s+') + '\\b(?![.,;!?])' + (have ? AUX_HAVE : ''), 'gi'), m => mc(m, to), { opt: 'contractions', tell: false, voices: WARM });
+}
 for (const [from, to] of [['it is', "it's"], ['that is', "that's"], ['there is', "there's"]])
-  add('Contractions added', 2, new RegExp('\\b' + from.replace(' ', '\\s+') + '\\b(?![.,;!?]|\\s+(?:not|no)\\b)', 'gi'), m => mc(m, to), { opt: 'contractions', tell: false, voices: WARM });
+  add('Contractions added', 2, new RegExp(NO_CONTR_BEFORE + '\\b' + from.replace(' ', '\\s+') + '\\b(?![.,;!?]|\\s+(?:not|no)\\b)', 'gi'), m => mc(m, to), { opt: 'contractions', tell: false, voices: WARM });
 
 const EXPAND = [
   ["can't", 'cannot'], ["won't", 'will not'], ["don't", 'do not'], ["doesn't", 'does not'], ["didn't", 'did not'], ["isn't", 'is not'],
@@ -303,6 +469,25 @@ add('Stock connectors dropped (ar)', 2, new RegExp(LEAD + '(?:\u0641\u064A \u062
 add('Throat-clearing removed (ar)', 2, /(?:\u0645\u0646 \u0627\u0644\u062C\u062F\u064A\u0631 \u0628\u0627\u0644\u0630\u0643\u0631|\u0645\u0646 \u0627\u0644\u0645\u0647\u0645 \u0623\u0646 \u0646\u0644\u0627\u062D\u0638) \u0623\u0646\s*/g, () => '');
 
 /* ------------------------------------------------------------------ *
+ * Repairs: run last, after every swap and cut, so their side effects never reach the output
+ * ------------------------------------------------------------------ */
+// "a important" left by a swap. Words starting with "h" or "u" keep the writer's choice (an historic, a unanimous).
+add('Article agreement fixed', 1, /\b(a|an|A|An)\s+(?![a-z]-)([a-gi-tv-z][\w-]*)/g, (m, a, w) => {
+  const want = art(w);
+  return a.toLowerCase() === want ? m : (a[0] === 'A' ? up(want) : want) + ' ' + w;
+}, { tell: false });
+// "complex and complex" left when two synonyms collapse into one word.
+add('Repeated word after a swap merged', 1, /\b([a-z]{4,})(,? and |,? or |, )\1\b/gi, (m, w) =>
+  /^(?:more|less|over|again|round|time|through|back|forth|wait|hope|went|ever|bit|step|year|day|week|side|hand|layer|piece|inch|little|much|many|true|very)$/i.test(w) || /er$/i.test(w) ? m : w, { tell: false });
+add('Repeated word after a cut merged', 1, /\b(the|a|an|of|to|in|and|for|on|with)\s+\1\b/gi, (m, w) => w, { tell: false });
+add('Empty parentheses removed', 1, /\s*\(\s*\)/g, () => '', { tell: false });
+// "have showed" left when a past form replaced a participle ("have demonstrated" -> "have shown").
+add('Participle after "have" fixed', 1, /\b(has|have|had|having|been|be)\s+(showed|rethought|ran|began|drew|grew|threw|wrote|spoke|took|gave|chose|drove)\b/gi, (m, aux, v) =>
+  aux + ' ' + ({ showed: 'shown', rethought: 'rethought', ran: 'run', began: 'begun', drew: 'drawn', grew: 'grown', threw: 'thrown', wrote: 'written', spoke: 'spoken', took: 'taken', gave: 'given', chose: 'chosen', drove: 'driven' })[v.toLowerCase()], { tell: false });
+// "improved through improved training" left when "enhanced" became "improved" next to an existing "improved".
+add('Echo after a swap fixed', 1, /\b(improve[sd]?|improving)\s+(through|by|with|via|from)\s+improved\b/gi, (m, a, p) => a + ' ' + p + ' better', { tell: false });
+
+/* ------------------------------------------------------------------ *
  * Flag-only rules: a program cannot fix these honestly
  * ------------------------------------------------------------------ */
 const FLAGS = [
@@ -312,18 +497,24 @@ const FLAGS = [
   ['Contrast reframe: state the positive claim directly', /\bnot only\b[^.!?\n]{3,80}\bbut also\b[^.!?\n]*/gi],
   ['Split contrast: drop the negative half', /\bThis (?:does not|doesn't) mean [^.]{3,80}\.\s+It means [^.]{3,100}\./gi],
   ['Rule of three: vary the list length', /\b[a-z]+(?:tion|ment|ity|ness|ing|ance|ence)s?, [a-z]+(?:tion|ment|ity|ness|ing|ance|ence)s?,? and [a-z]+(?:tion|ment|ity|ness|ing|ance|ence)s?\b/gi],
-  ['Significance claim: give the fact, drop the weight', /\b(?:marks? a (?:pivotal|significant|turning) (?:moment|point)|indelible mark|broader (?:trend|movement)|enduring legacy|watershed moment|in the evolution of)\b[^.!?\n]*/gi],
+  ['Significance claim: give the fact, drop the weight', /\b(?:marks? a (?:pivotal|significant|turning) (?:moment|point)|indelible mark|broader (?:trend|movement)|enduring legacy|watershed moment|in the evolution of|cannot be (?:overstated|understated|ignored)|(?:In|Imagine) a world where)\b[^.!?\n]*/gi],
   ['Trendy AI filler: say the concrete thing', /\b(?:quietly (?:building|dominating|transforming|reshaping)|built different|(?:do|trust) the work|shapes? (?:the|how) (?:future|we|conversation)|this (?:difference )?matters because|what matters here|the real (?:win|story|magic))\b[^.!?\n]*/gi],
   ['Saying that sounds deep: state the claim', /\b(?:is|are|becomes?) the (?:language|currency|architecture|fabric|backbone|heartbeat|engine) of\b[^.!?\n]*/gi],
   ['Arguing with no one: cut the defense', /\b(?:This isn't (?:mainly |really )?about|A tempting approach would be|One might be tempted to|You might think|It would be easy to just|This is not to say)\b[^.!?\n]*/gi],
   ['Brochure pattern: name the real audience or drop it', /\bWhether you're (?:an? )?[\w -]{2,30} or (?:an? )?[\w -]{2,30},[^.!?\n]*/gi],
   ['Both-sides hedge: take a position or cut it', /\b(?:multiple perspectives|both sides of (?:the|this)|on one hand|the issue is complex|a nuanced (?:topic|issue))\b[^.!?\n]*/gi],
   ['Writing about the document: state the subject instead', /\b(?:the table below (?:compares|shows|lists)|this section is organi[sz]ed|(?:was|were) generated from|compiled from|anything unconfirmed is flagged)\b[^.!?\n]*/gi],
-  ['Templated section heading: write a specific one', /^#{1,6}\s+(?:Challenges and (?:Legacy|Future Prospects)|Future (?:Outlook|Prospects)|Conclusion|Awards and recognition)\s*$/gim],
+  ['Templated section heading: write a specific one', /^#{1,6}\s+(?:Challenges and (?:Legacy|Future Prospects)|Future (?:Outlook|Prospects)|Conclusion|Awards and recognition|Final Thoughts|Key Takeaways|The Bottom Line|Wrapping Up|Why (?:It|This) Matters)\s*$/gim],
   ['"Beyond X" opener: say how the sections relate', /(?:^|[.!?]\s+)Beyond\b[^.!?\n]*/g],
   ['Paraphrased restatement: say it once', /\b(?:In other words|Put differently|To put it another way)\b[^.!?\n]*/gi],
   ['Chatbot placeholder left in', /\[(?:Your Name|Insert [^\]]*|Name|Company)\]/gi],
-  ['Mechanical ordering: First, Second, Finally', /\bfirst,?\s+[^.;]{2,50}[;.]\s*[^.;]*\bsecond,?\s+[^.;]{2,50}[;.]\s*[^.;]*\b(?:finally|lastly),?/gi]
+  ['Mechanical ordering: First, Second, Finally', /\bfirst,?\s+[^.;]{2,50}[;.]\s*[^.;]*\bsecond,?\s+[^.;]{2,50}[;.]\s*[^.;]*\b(?:finally|lastly),?/gi],
+  ['Corporate filler: say what will actually happen', /\b(?:drive|driving|drives) (?:meaningful |real |lasting |measurable |tangible )?(?:impact|engagement|growth|results|value|change|outcomes)\b[^.!?\n]*|\b(?:taken|take) the liberty of\b[^.!?\n]*|\bmove the needle\b[^.!?\n]*/gi],
+  ['Stock opener: start with the specific point', /(?:^|[.!?]\s+)[^.!?\n]{0,40}\b(?:is one of the most (?:pressing|important|significant|critical|debated) (?:issues|challenges|topics|questions|problems)|has (?:long )?been a (?:subject|topic) of (?:considerable |great |much )?(?:interest|debate|discussion))\b[^.!?\n]*/gi],
+  ['Travel-brochure cliche: describe the place', /\b(?:hidden gem|true paradise|something for everyone|a feast for the senses|off the beaten path|a must-visit)\b[^.!?\n]*/gi],
+  ['Review cliche: say what the book or product does', /\b(?:tour de force|lingers long after|page-turner|edge of (?:your|my) seat|a masterclass in|left me (?:speechless|breathless)|minor quibble)\b[^.!?\n]*/gi],
+  ['Sales call to action: keep only if the text is an advert', /(?:^|[.!?]\s+)(?:Don't miss (?:out|the chance)|Order (?:yours|now)|Get yours today|Elevate your|Transform your|Experience the difference)\b[^.!?\n]*/g],
+  ['Abstract triplet in one sentence: keep the one that matters', /\b(?:a|an) [a-z]+, [a-z]+,? and [a-z]+ (?:tool|approach|solution|way|choice|option|resource)\b/gi]
 ];
 
 /* ------------------------------------------------------------------ *
@@ -341,8 +532,10 @@ function protect(text, o) {
   o = o || {};
   const store = [];
   const hold = m => { store.push(m); return '\uE000' + (store.length - 1) + '\uE001'; };
-  let t = text.replace(TEX_ENV, hold).replace(TEX_DISPLAY, hold).replace(TEX_COMMENT, hold).replace(TEX_CMD, hold).replace(TEX_INLINE, hold)
-    .replace(/```[\s\S]*?```|~~~[\s\S]*?~~~/g, hold).replace(/`[^`\n]+`/g, hold).replace(/^>.*$/gm, hold)
+  // Code first: a `\cite` inside backticks is code, not LaTeX.
+  let t = text.replace(/```[\s\S]*?```|~~~[\s\S]*?~~~/g, hold).replace(/`[^`\n]+`/g, hold)
+    .replace(TEX_ENV, hold).replace(TEX_DISPLAY, hold).replace(TEX_COMMENT, hold).replace(TEX_CMD, hold).replace(TEX_INLINE, hold)
+    .replace(/^>.*$/gm, hold)
     .replace(/\]\([^)\s]+(?:\s+"[^"]*")?\)/g, hold)
     .replace(/\bhttps?:\/\/[^\s)\]"']*[^\s)\]"'.,;:!?]/g, hold).replace(/[\w.+-]+@[\w-]+\.[\w.]+/g, hold)
     .replace(/(?<![\w])[@#][A-Za-z_]\w*/g, m => m[0] === '#' && /^#[A-Za-z]/.test(m) ? hold(m) : m[0] === '@' ? hold(m) : m)
@@ -354,13 +547,15 @@ function protect(text, o) {
   for (const k of o.keep || []) if (k) t = t.replace(new RegExp('(?<![\\w])' + esc(k) + '(?![\\w])', 'gi'), hold);
   return { t, store };
 }
-const restore = (t, store) => t.replace(/\uE000(\d+)\uE001/g, (_, i) => store[+i]);
+// Recursive: a protected span can hold another (a URL inside a quote), so the inner token is restored too.
+const restore = (t, store) => t.replace(/\uE000(\d+)\uE001/g, (_, i) => restore(store[+i], store));
 // Restored original length of a protected string (tokens count as their originals).
 const stripTok = t => t.replace(/\uE000\d+\uE001/g, ' ');
 
 function clean(t) {
-  return t.replace(/[ \t]+\n/g, '\n').replace(/(\S)[ \t]{2,}/g, '$1 ').replace(/ +([,.;:!?])/g, '$1')
-    .replace(/,\s*,/g, ',').replace(/,([.!?])/g, '$1').replace(/(^|\n)[ \t]*,\s*/g, '$1')
+  // A space before punctuation goes, except before ".docx" or ".NET", where the dot starts a word.
+  return t.replace(/[ \t]+\n/g, '\n').replace(/(\S)[ \t]{2,}/g, '$1 ').replace(/(\S) +([,.;:!?])(?![\w])/g, '$1$2')
+    .replace(/,\s*,/g, ',').replace(/,([.!?])/g, '$1').replace(/(^|\n)[ \t]*,\s*/g, '$1').replace(/(^|\n) {1,3}(?=[A-Z])/g, '$1')
     .replace(/^[ \t]*[-*\u2022][ \t]*$/gm, '').replace(/\n{3,}/g, '\n\n').replace(/^\s+|\s+$/g, '');
 }
 
@@ -412,7 +607,7 @@ function stats(t) {
 
 /* ---------- Vocabulary tiers, for the lexical-density signal ---------- */
 const T1 = new Set('delve delves delving delved tapestry testament underscore underscores underscoring underscored leverage leverages leveraging leveraged multifaceted realm interplay seamless seamlessly groundbreaking synergy synergies beacon symphony nestled bustling daunting holistic holistically actionable impactful learnings meticulous meticulously embark embarking intricate intricacies pivotal vibrant'.split(' '));
-const T2 = new Set('crucial robust foster fosters fostering enhance enhances enhancing showcase showcases showcasing notably moreover furthermore garner bolster utilize utilizes poised thrive thrives harness streamline empower elevate facilitate paradigm transformative comprehensive cornerstone paramount nuanced myriad plethora encompass catalyze reimagine unleash'.split(' '));
+const T2 = new Set('crucial robust foster fosters fostering enhance enhances enhancing showcase showcases showcasing notably moreover furthermore garner bolster utilize utilizes poised thrive thrives harness streamline empower elevate facilitate paradigm transformative comprehensive cornerstone paramount nuanced myriad plethora encompass catalyze reimagine unleash commendable noteworthy invaluable indispensable unparalleled tirelessly realm elevate elevating resonate resonates'.split(' '));
 const T3 = new Set('significant significantly innovative innovation effective effectively dynamic scalable compelling unprecedented exceptional remarkable remarkably sophisticated instrumental valuable'.split(' '));
 
 function findFlags(t) {
@@ -428,6 +623,13 @@ function findFlags(t) {
     if (first(sents[i]) && first(sents[i]) === first(sents[i - 1]) && first(sents[i]) === first(sents[i - 2])) {
       out.push({ label: 'Three sentences in a row open with the same word', text: sents[i - 2].slice(0, 60) + ' ...' });
       i += 2;
+    }
+  // A row of dramatic fragments: "Not revenue. Not retention. Nothing."
+  const wc = s => (s.match(TOKEN) || []).length;
+  for (let i = 2; i < sents.length; i++)
+    if (wc(sents[i]) <= 3 && wc(sents[i - 1]) <= 3 && wc(sents[i - 2]) <= 3) {
+      out.push({ label: 'Row of dramatic fragments: merge them into one specific sentence', text: sents.slice(i - 2, i + 1).join(' ').slice(0, 80) });
+      while (i < sents.length && wc(sents[i]) <= 3) i++;
     }
   // Paragraphs where every sentence lands in a five-word range.
   t.split(/\n\s*\n/).forEach(par => {
@@ -534,10 +736,21 @@ function runOnce(t, level, voice, opts, counts, tellBox) {
   return t;
 }
 
+const CONVERSATIONAL = /\b(?:I|me|my|we|our|us|you|your)\b|\b(?:\w+n't|\w+'(?:re|ve|ll|m)|(?:it|that|there|here|what|let)'s)\b/i;
+// Academic papers and formal letters keep their uncontracted register even in the neutral voice.
+function formalRegister(t) {
+  return /\([A-Z][^()\n]{1,60}?,? (?:19|20)\d{2}[a-z]?\)|\[\d+(?:[,–-]\s?\d+)*\]|\bet al\.|\\cite\{|\b(?:this|the present|our) (?:paper|study|thesis|dissertation|review|manuscript|article|work|chapter)\b|\bSection \d|\b(?:hypothes[ie]s|methodology|literature review|findings suggest)\b|^\s*Dear (?:Sir|Madam|Hiring|Mr|Ms|Mrs|Dr|Prof|Professor|Committee|Editor)|\b(?:Yours (?:sincerely|faithfully)|Sincerely,|Respectfully,)/im.test(t);
+}
+
 function run(text, level, opts) {
   opts = Object.assign({ contractions: true, dashes: true, quotes: true }, opts || {});
   level = level || 2;
   const voice = VOICES.includes(opts.voice) ? opts.voice : 'neutral';
+  const formal = voice === 'neutral' && opts.register !== 'informal' && formalRegister(String(text || ''));
+  if (formal) opts.contractions = false;
+  // Neutral voice adds contractions only to text that already talks to someone (I, we, you) or already contracts.
+  // Impersonal prose with none, like a news report, keeps its register.
+  else if (voice === 'neutral' && opts.register !== 'informal' && !CONVERSATIONAL.test(String(text || ''))) opts.contractions = false;
   const profile = opts.profile || (opts.sample ? calibrate(opts.sample) : null);
   ctx = { splitAt: 32 };
   if (profile) {
@@ -563,7 +776,7 @@ function run(text, level, opts) {
     if (t === before) break;
   }
   t = restore(clean(t), store);
-  return { text: t, tells: tellBox.n, voice, profile, changes: [...counts].map(([label, n]) => ({ label, n })).sort((a, b) => b.n - a.n) };
+  return { text: t, tells: tellBox.n, voice, formal, profile, changes: [...counts].map(([label, n]) => ({ label, n })).sort((a, b) => b.n - a.n) };
 }
 
 /* ------------------------------------------------------------------ *
@@ -582,7 +795,8 @@ function lexical(text) {
   const t3 = rem.filter(x => T3.has(x)).length;
   if (rem.length >= 80 && t3 / rem.length > 0.03) weighted += 0.3 * t3;
   const words = (text.match(TOKEN) || []).length;
-  return { weighted, density: words ? weighted / words : 0 };
+  // A floor of 60 words: in a two-sentence text one tell would otherwise read as "Pure AI smell".
+  return { weighted, density: words ? weighted / Math.max(words, 60) : 0 };
 }
 
 function metrics(text) {
@@ -635,7 +849,7 @@ function highlights(text, level, opts) {
   ctx = { splitAt: 32 };
   const { t: p, store } = protect(String(text || '').replace(/\r\n?/g, '\n'), opts);
   const ranges = [];
-  const cosmetic = /^(?:Contractions|Long sentences|Predicate)/;
+  const cosmetic = /^(?:Contractions|Long sentences|Predicate|Article agreement|Repeated word|Empty parentheses|Participle|Title-case label|"Firstly")/;
   for (const r of RULES) {
     if (r.level > Math.min(level || 2, 3)) continue;
     if (r.opt && opts[r.opt] === false) continue;
@@ -770,7 +984,8 @@ const VOICE_BRIEF = {
   casual: 'Conversational and relaxed. Everyday words, contractions, short sentences where they fit. Vary sentence length.',
   direct: 'Direct and economical. Cut softeners and intensifiers. Lead with the point. Vary sentence length.',
   formal: 'Formal and academic. No contractions. Precise wording. Keep hedges that reflect real uncertainty.',
-  technical: 'Precise technical prose. Keep every term of art exactly as written. Neutral and plain.'
+  technical: 'Precise technical prose. Keep every term of art exactly as written. Neutral and plain.',
+  student: 'Third-year undergraduate register, still formal: no contractions, no slang, no deliberate errors. Short everyday verbs (beat, won, picks, checked, report) over Latinate ones. Full stops instead of semicolons. Uneven sentence length with a few very short ones. Start a sentence with But, So or And where the logic allows. Gloss a term in passing and spell out what a number means. Keep student-grade hedges ("seems to", "part of the reason is", "about"). No rhetorical flourishes, no one-line closers, no em dashes, no bold labels. Say "this paper" rather than "we". End on the last fact.'
 };
 
 // Rules plus the few things this app needs on top: protected tokens, Markdown, output shape, voice, writing sample.
@@ -835,7 +1050,7 @@ async function polish(text, cfg) {
     done.push(out);
   }
   if (cfg.onProgress) cfg.onProgress(chunks.length, chunks.length);
-  const joined = done.join('\n\n').replace(/__P(\d+)__/g, (_, i) => store[+i] !== undefined ? store[+i] : '');
+  const joined = done.join('\n\n').replace(/__P(\d+)__/g, (_, i) => store[+i] !== undefined ? restore(store[+i], store) : '');
   return { text: joined, warnings, chunks: chunks.length, tokens: usage, model };
 }
 

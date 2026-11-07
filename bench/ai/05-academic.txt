@@ -1,0 +1,7 @@
+The prediction of stock prices has long been a subject of considerable interest within the financial research community. Classical econometric models, such as ARIMA and GARCH, impose a linear structure on data that does not obey it, thereby limiting their predictive capacity (Box & Jenkins, 1976).
+
+In recent years, deep learning approaches have garnered significant attention due to their ability to capture complex, non-linear relationships. Notably, Long Short-Term Memory (LSTM) networks have demonstrated remarkable performance in modelling sequential data [3]. Furthermore, transformer-based architectures have emerged as a promising alternative, leveraging self-attention mechanisms to model long-range dependencies.
+
+It is important to note that the reported accuracies, while on their face remarkable, must be interpreted with caution. Many studies fail to account for transaction costs, look-ahead bias, and survivorship bias; consequently, their results may not generalise to real-world trading environments.
+
+This paper aims to provide a comprehensive review of the existing literature, shedding light on the strengths and limitations of current approaches. The remainder of the paper is organised as follows: Section 2 delves into the methodology, Section 3 presents the results, and Section 4 concludes.

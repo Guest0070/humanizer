@@ -1,0 +1,21 @@
+## Overview
+
+This library provides a robust and scalable solution for managing application state. It is designed to seamlessly integrate with your existing codebase, empowering developers to build high-quality applications with ease.
+
+## Key Benefits
+
+- **Performance:** Leverages memoization to minimize unnecessary re-renders.
+- **Flexibility:** Supports a wide range of use cases, from simple counters to complex data flows.
+- **Developer Experience:** Offers intuitive APIs that streamline the development process.
+
+## Getting Started
+
+To get started, simply install the package using npm:
+
+```bash
+npm install statecraft
+```
+
+Once installed, you can import the `createStore` function and begin building your store. It's worth noting that the library is fully compatible with TypeScript, ensuring type safety throughout your application.
+
+In essence, Statecraft serves as a powerful tool that enhances productivity and fosters maintainable code. Whether you're building a small side project or a large enterprise application, Statecraft has you covered.

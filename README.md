@@ -11,6 +11,7 @@ It is a rule engine: about 400 deterministic rules, a scoring model, and a diff 
 | Any browser | Open `index.html`. It is one self-contained file. |
 | Command line | `node cli.js [options] [file ...]`, or pipe text in. `node cli.js --help` lists the options. |
 | Tests | `node tests.js` |
+| Benchmark | `node bench.js` runs every sample in `bench/ai` and `bench/human` at levels 2-4 and reports scores, word counts kept, flags, lost facts and mechanical damage (broken capitals, articles, punctuation). Add `--show` to print the outputs, `--voice all` to cover every voice. It exits 1 on any damage. |
 | Rebuild the app | `node build.js` (inlines `src/engine.js` into `src/app.html`, writes `index.html`) |
 
 The page carries a Content-Security-Policy that blocks every network request except `https://openrouter.ai`, and the page only contacts it when you press **Humanize with AI**. With no key entered, it never goes online.
@@ -28,7 +29,10 @@ Nothing to install. OpenRouter is a plain HTTPS API, so the page (or the CLI) ca
 ## What it does
 
 - **Four strengths:** Light (formatting, chatbot debris, filler), Standard (vocabulary, structure, puffery), Aggressive (tails, list labels, sentence splits), Max (rhythm engineering, up to three passes).
-- **Five voices:** Neutral, Casual, Direct, Formal (expands contractions, academic habits), Technical (keeps ambiguous words such as "robust").
+- **Six voices:** Neutral, Casual, Direct, Formal (expands contractions, academic habits), Technical (keeps ambiguous words such as "robust"), Student (formal but plain: short verbs, full stops instead of semicolons, But/So/And openers).
+- **Keeps the register:** in the Neutral voice, contractions are added only to text that already talks to someone or already contracts. Academic text (citations, "this paper", LaTeX) and formal letters are left uncontracted. `--informal` in the CLI overrides this.
+- **Keeps the facts:** an "-ing" rider that carries a number, a name or a citation is turned into its own sentence ("..., contributing to a 20% rise" becomes "This contributed to a 20% rise") instead of being cut. Only empty riders ("ensuring success") are dropped.
+- **Repairs its own edits:** a last pass fixes "a"/"an" after a swap, merges "complex and complex", restores "have shown" after "have showed", and never leaves a comma splice where a dash stood before a new clause.
 - **Match my voice:** paste a sample of your own writing. It reads your sentence length, contractions, dashes and connectors, then adapts and reports the distance from your voice.
 - **Protects what must not change:** code, links, URLs, emails, @mentions, #hashtags, citations like `(Smith et al., 2023)` and `[1]`, versions, paths, text in double quotes, and any words you list under Keep.
 - **Shows its work:** a word-level Changes view, a Tells view that marks every pattern in the original, a per-rule change list, writing stats, and a fact check that lists any number, URL or acronym that went missing.
